@@ -4,6 +4,7 @@
 library(tidyverse)
 library(data.table)
 library(here)
+library(readxl)
 
 atlantis_fg <- read.csv('data/GOA_Groups.csv')
 
@@ -45,23 +46,72 @@ for(i in 1:nrow(f_vec)){
 
 bio_catch <- rbindlist(bio_catch_list)
 
+to_plot <- atlantis_fg %>% filter(IsImpacted == 1 & GroupType == 'FISH') %>% pull(Code)
+
 # plot
-p <- bio_catch %>%
-  filter(this_fval < 1) %>%
+for_plot <- bio_catch %>%
+  filter(this_fval <= 1) %>%
   pivot_longer(-this_fval) %>%
   separate_wider_delim(name, delim ='_', names = c('Code', 'Type')) %>%
   left_join(atlantis_fg %>% select(Code, Name), by = 'Code') %>%
-  ggplot(aes(x = this_fval, y = value / 1000, color = Type))+
+  filter(Code %in% to_plot) 
+
+# make set with Code and F where biomass drops below 50%
+f50_frame <- list()
+
+for(i in 1:length(to_plot)){
+  
+  code <- to_plot[i]
+  B0 <- for_plot %>% filter(Code == code & this_fval == 0 & Type == 'Biomass') %>% pull(value)
+  f50 <- for_plot %>% filter(Code == code & Type == 'Biomass' & value < B0 / 2) %>% slice_head() %>% pull(this_fval)
+  
+  if(length(f50) == 0) f50 <- NA
+  
+  f50_frame[[i]] <- data.frame('Code' = code, f50)
+  
+}
+
+f50_frame <- data.table::rbindlist(f50_frame)
+f50_frame <- f50_frame %>% left_join(atlantis_fg %>% select(Code, Name))
+
+# FMSY
+# read in F and M
+tier3 <- read_xlsx('data/GOA MSY estimates tables.xlsx', sheet = 1, range = 'A3:J19') %>%
+  select(Stock, FOFL) %>%
+  set_names(c('Stock', 'FMSY'))
+
+tier4_5 <- read_xlsx('data/GOA MSY estimates tables.xlsx', sheet = 2, range = 'A3:I10') %>%
+  select(`Stock/Stock complex`, `M or FMSY`)%>%
+  set_names(c('Stock', 'FMSY'))
+
+tier_3_4_5 <- rbind(tier3, tier4_5)
+
+# make key
+tier_3_4_5 <- tier_3_4_5 %>%
+  mutate(Code = c('POL','COD','SBF','FFS','FFS','FFS','FFS','FFD',
+                  'REX','REX','ATF','FHS','POP','RFS','RFS','RFP',
+                  'FFS','RFD','RFD','RFD','RFD','THO','DOG')) %>%
+  group_by(Code) %>%
+  summarise(FMSY = mean(FMSY)) %>%
+  set_names('Code','FMSY')
+
+fmsy <- data.frame('Code' = to_plot) %>%
+  left_join(tier_3_4_5) %>% 
+  left_join(atlantis_fg %>% select(Code, Name))
+  
+p <- for_plot %>%
+  ggplot(aes(x = this_fval, y = value / 1000))+
   geom_line()+
   geom_point()+
-  scale_color_manual(values = c('red','blue'))+
+  geom_vline(data = f50_frame, aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'red')+
+  geom_vline(data = fmsy, aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'darkgreen')+
   theme_bw()+
   labs(x = 'F', y = '1000\'s of tons')+
-  facet_wrap(~Name, scales = 'free', ncol = 3)
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p
 
-ggsave('sensitivity.png', p, width = 8, height = 22)
+ggsave('sensitivity.png', p, width = 5, height = 35)
   
 
 
