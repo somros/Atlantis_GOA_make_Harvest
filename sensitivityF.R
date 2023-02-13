@@ -52,7 +52,7 @@ for(i in 1:nrow(f_vec)){
   # get realized F at t1
   biom_t1 <- biodat_tmp %>% 
     select(Time, any_of(fished_grp)) %>% 
-    filter(Time == 365) %>%
+    filter(Time == 0) %>%
     #filter(between(Time, 365, 1825)) %>% 
     summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
     pivot_longer(-Time, names_to = 'Code', values_to = 'biomass') %>%
@@ -145,7 +145,7 @@ fmsy <- data.frame('Code' = to_plot) %>%
 # make plots
   
 p <- for_plot %>%
-  #filter(this_fval <= 1) %>%
+  filter(this_fval <= 1) %>%
   ggplot(aes(x = f, y = value / 1000))+
   geom_line()+
   geom_point(aes(color = as.factor(this_fval)), size = 2)+
@@ -157,7 +157,7 @@ p <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p
-ggsave('sensitivity.png', p, width = 8, height = 40)
+ggsave('sensitivity_stagger.png', p, width = 8, height = 40)
 
 # # broken down in smaller groups
 # # Tier 3
