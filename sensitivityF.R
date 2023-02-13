@@ -90,25 +90,41 @@ for_plot <- bio_catch %>%
   filter(Code %in% to_plot) %>%
   left_join(realized_f, by = c('Code','this_fval'))
 
-# make set with Code and F where biomass drops below 50%
-f50_frame <- list()
+# # make set with Code and F where biomass drops below 50%
+# f50_frame <- list()
+# 
+# for(i in 1:length(to_plot)){
+#   
+#   code <- to_plot[i]
+#   B0 <- for_plot %>% filter(Code == code & this_fval == 0 & Type == 'Biomass') %>% pull(value)
+#   f50 <- for_plot %>% filter(Code == code & Type == 'Biomass' & value < B0 / 2) %>% slice_head() %>% pull(this_fval)
+#   
+#   if(length(f50) == 0) f50 <- NA
+#   
+#   f50_frame[[i]] <- data.frame('Code' = code, f50)
+#   
+# }
+# 
+# f50_frame <- data.table::rbindlist(f50_frame)
+# f50_frame <- f50_frame %>% left_join(atlantis_fg %>% select(Code, Name))
+
+# make set with Code and F where catch is highest
+fmsy_atlantis <- list()
 
 for(i in 1:length(to_plot)){
   
   code <- to_plot[i]
-  B0 <- for_plot %>% filter(Code == code & this_fval == 0 & Type == 'Biomass') %>% pull(value)
-  f50 <- for_plot %>% filter(Code == code & Type == 'Biomass' & value < B0 / 2) %>% slice_head() %>% pull(this_fval)
+  this_df <- for_plot %>% filter(Code == code)
   
-  if(length(f50) == 0) f50 <- NA
-  
-  f50_frame[[i]] <- data.frame('Code' = code, f50)
+  # imposed and realized f corresponding to highest catch
+  fmsy_atlantis[[i]] <-  this_df %>% filter(Type == 'Catch') %>% arrange(desc(value)) %>% slice_head(n = 1) %>% select(Code, this_fval, f)
   
 }
 
-f50_frame <- data.table::rbindlist(f50_frame)
-f50_frame <- f50_frame %>% left_join(atlantis_fg %>% select(Code, Name))
+fmsy_atlantis <- data.table::rbindlist(fmsy_atlantis)
+fmsy_atlantis <- fmsy_atlantis %>% left_join(atlantis_fg %>% select(Code, Name))
 
-# FMSY
+# FMSY from FMP
 # read in F and M
 tier3 <- read_xlsx('data/GOA MSY estimates tables.xlsx', sheet = 1, range = 'A3:J19') %>%
   select(Stock, FOFL) %>%
@@ -149,7 +165,7 @@ p <- for_plot %>%
   ggplot(aes(x = f, y = value / 1000))+
   geom_line()+
   geom_point(aes(color = as.factor(this_fval)), size = 2)+
-  geom_vline(data = f50_frame, aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy_atlantis, aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
   geom_vline(data = fmsy, aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
   geom_vline(data = fmsy, aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
   theme_bw()+
@@ -159,88 +175,116 @@ p <- for_plot %>%
 p
 ggsave('sensitivity_stagger.png', p, width = 8, height = 40)
 
-# # broken down in smaller groups
-# # Tier 3
-# # split in 2 for slides
-# t3_1 <- c('POL','COD','SBF','POP','RFD','RFP')
-# 
-# p1_1 <- for_plot %>%
-#   filter(Code %in% t3_1) %>%
-#   ggplot(aes(x = this_fval, y = value / 1000))+
-#   geom_line()+
-#   geom_point()+
-#   geom_vline(data = f50_frame %>% filter(Code %in% t3_1), aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'red')+
-#   geom_vline(data = fmsy %>% filter(Code %in% t3_1), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'darkgreen')+
-#   theme_bw()+
-#   labs(x = 'F', y = '1000\'s of tons')+
-#   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
-# 
-# p1_1
-# ggsave('sensitivity_tier3_1.png', p1_1, width = 5, height = 7)
-# 
-# t3_2 <- c('FFS','FFD','REX','ATF','FHS')
-# 
-# p1_2 <- for_plot %>%
-#   filter(Code %in% t3_2) %>%
-#   ggplot(aes(x = this_fval, y = value / 1000))+
-#   geom_line()+
-#   geom_point()+
-#   geom_vline(data = f50_frame %>% filter(Code %in% t3_2), aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'red')+
-#   geom_vline(data = fmsy %>% filter(Code %in% t3_2), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'darkgreen')+
-#   theme_bw()+
-#   labs(x = 'F', y = '1000\'s of tons')+
-#   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
-# 
-# p1_2
-# ggsave('sensitivity_tier3_2.png', p1_2, width = 5, height = 7)
-# 
-# # Tier 4 - 5
-# t4and5 <- c('RFS','THO','DOG','SKB','SKL','SKO')
-# 
-# p2 <- for_plot %>%
-#   filter(Code %in% t4and5) %>%
-#   ggplot(aes(x = this_fval, y = value / 1000))+
-#   geom_line()+
-#   geom_point()+
-#   geom_vline(data = f50_frame %>% filter(Code %in% t4and5), aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'red')+
-#   geom_vline(data = fmsy %>% filter(Code %in% t4and5), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'darkgreen')+
-#   theme_bw()+
-#   labs(x = 'F', y = '1000\'s of tons')+
-#   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
-# 
-# p2
-# ggsave('sensitivity_tier4and5.png', p2, width = 5, height = 7)
-# 
-# # forage fish
-# ff <- c('CAP','EUL','SAN','HER','FOS')
-# 
-# p3 <- for_plot %>%
-#   filter(Code %in% ff) %>%
-#   ggplot(aes(x = this_fval, y = value / 1000))+
-#   geom_line()+
-#   geom_point()+
-#   geom_vline(data = f50_frame %>% filter(Code %in% ff), aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'red')+
-#   geom_vline(data = fmsy %>% filter(Code %in% ff), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'darkgreen')+
-#   theme_bw()+
-#   labs(x = 'F', y = '1000\'s of tons')+
-#   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
-# 
-# p3
-# ggsave('sensitivity_forage.png', p3, width = 5, height = 7)
-# 
-# # migrating fish species
-# mig <- c('SCH','SCM','SCO','SPI','SSO','HAK')
-# 
-# p4 <- for_plot %>%
-#   filter(Code %in% mig) %>%
-#   ggplot(aes(x = this_fval, y = value / 1000))+
-#   geom_line()+
-#   geom_point()+
-#   geom_vline(data = f50_frame %>% filter(Code %in% mig), aes(xintercept = f50, group = Name), linetype = 'dashed', color = 'red')+
-#   geom_vline(data = fmsy %>% filter(Code %in% mig), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'darkgreen')+
-#   theme_bw()+
-#   labs(x = 'F', y = '1000\'s of tons')+
-#   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
-# 
-# p4
-# ggsave('sensitivity_migration.png', p4, width = 5, height = 7)
+# broken down in smaller groups
+# Tier 3
+# split in 2 for slides
+t3_1 <- c('POL','COD','SBF','POP','RFD','RFP')
+
+p1_1 <- for_plot %>%
+  filter(this_fval <= 1) %>%
+  filter(Code %in% t3_1) %>%
+  ggplot(aes(x = f, y = value / 1000))+
+  geom_line()+
+  geom_point(aes(color = as.factor(this_fval)), size = 2)+
+  geom_vline(data = fmsy_atlantis %>% filter(Code %in% t3_1), aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy %>% filter(Code %in% t3_1), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
+  geom_vline(data = fmsy %>% filter(Code %in% t3_1), aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  theme_bw()+
+  labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
+
+p1_1
+ggsave('sensitivity_tier3_1_1.png', p1_1, width = 5, height = 7)
+
+t3_2 <- c('FFS','FFD','REX','ATF','FHS')
+
+p1_2 <- for_plot %>%
+  filter(this_fval <= 1) %>%
+  filter(Code %in% t3_2) %>%
+  ggplot(aes(x = f, y = value / 1000))+
+  geom_line()+
+  geom_point(aes(color = as.factor(this_fval)), size = 2)+
+  geom_vline(data = fmsy_atlantis %>% filter(Code %in% t3_2), aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy %>% filter(Code %in% t3_2), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
+  geom_vline(data = fmsy %>% filter(Code %in% t3_2), aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  theme_bw()+
+  labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
+
+p1_2
+ggsave('sensitivity_tier3_2_1.png', p1_2, width = 5, height = 7)
+
+# for methods
+p1_3 <- for_plot %>%
+  filter(this_fval <= 1) %>%
+  filter(Code %in% c(t3_1, t3_2)) %>%
+  ggplot(aes(x = f, y = value / 1000))+
+  geom_line()+
+  geom_point(aes(color = as.factor(this_fval)), size = 2)+
+  geom_vline(data = fmsy_atlantis %>% filter(Code %in% c(t3_1, t3_2)), aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy %>% filter(Code %in% c(t3_1, t3_2)), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
+  geom_vline(data = fmsy %>% filter(Code %in% c(t3_1, t3_2)), aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  theme_bw()+
+  labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
+
+p1_3
+ggsave('sensitivity_tier3_all.png', p1_3, width = 7.5, height = 10)
+
+
+# Tier 4 - 5
+t4and5 <- c('RFS','THO','DOG','SKB','SKL','SKO')
+
+p2 <- for_plot %>%
+  filter(this_fval <= 1) %>%
+  filter(Code %in% t4and5) %>%
+  ggplot(aes(x = f, y = value / 1000))+
+  geom_line()+
+  geom_point(aes(color = as.factor(this_fval)), size = 2)+
+  geom_vline(data = fmsy_atlantis %>% filter(Code %in% t4and5), aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy %>% filter(Code %in% t4and5), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
+  geom_vline(data = fmsy %>% filter(Code %in% t4and5), aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  theme_bw()+
+  labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
+
+p2
+ggsave('sensitivity_tier4and5_1.png', p2, width = 5, height = 7)
+
+# forage fish
+ff <- c('CAP','EUL','SAN','HER','FOS')
+
+p3 <- for_plot %>%
+  filter(this_fval <= 1) %>%
+  filter(Code %in% ff) %>%
+  ggplot(aes(x = f, y = value / 1000))+
+  geom_line()+
+  geom_point(aes(color = as.factor(this_fval)), size = 2)+
+  geom_vline(data = fmsy_atlantis %>% filter(Code %in% ff), aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy %>% filter(Code %in% ff), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
+  geom_vline(data = fmsy %>% filter(Code %in% ff), aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  theme_bw()+
+  labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
+
+p3
+ggsave('sensitivity_forage_1.png', p3, width = 5, height = 7)
+
+# migrating fish species
+mig <- c('SCH','SCM','SCO','SPI','SSO','HAK')
+
+p4 <- for_plot %>%
+  filter(this_fval <= 1) %>%
+  filter(Code %in% mig) %>%
+  ggplot(aes(x = f, y = value / 1000))+
+  geom_line()+
+  geom_point(aes(color = as.factor(this_fval)), size = 2)+
+  geom_vline(data = fmsy_atlantis %>% filter(Code %in% mig), aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
+  geom_vline(data = fmsy %>% filter(Code %in% mig), aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
+  geom_vline(data = fmsy %>% filter(Code %in% mig), aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  theme_bw()+
+  labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
+  ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
+
+p4
+ggsave('sensitivity_migration_1.png', p4, width = 5, height = 7)
