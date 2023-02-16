@@ -97,13 +97,17 @@ selex_tier4plus <- age_mat %>% filter(Code %in% setdiff(age_mat$Code, unique(sel
 
 selex <- rbind(selex_tier3, selex_tier4plus)
 
+# write out to use in the make_ancillary_prm.R script
+# write.csv(selex, 'data/age_at_selex.csv', row.names = F)
+
 # Because Atlantis will apply mFC as knife-edge, set all classes < age at selex as 0 biomass
 biom_age_selected <- biom_age %>%
   left_join(selex, by = 'Code') %>%
   mutate(idx = as.numeric(Age) - as.numeric(age_class)) %>%
   filter(is.na(idx) | idx >= 0) %>%
   group_by(Code) %>%
-  summarise(Biomass = sum(Biomass))
+  summarise(Biomass = sum(Biomass)) %>%
+  ungroup()
 
 # compare to tot biom
 # biom %>%

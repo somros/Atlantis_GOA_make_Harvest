@@ -31,9 +31,9 @@ make_mfc <- function(all.goa.fisheries, fleet.list, group.list, goa.biomass){
     group_by(atlantis_fg) %>% 
     summarise(catch_tons=sum(mean_catch))
   
-  write_csv(tot.fishing.initial, "data/initial_mfc_catch.csv")
-  
-  write_csv(tot.fishing.average, "data/mfc_average_catch.csv")
+  # write_csv(tot.fishing.initial, "data/initial_mfc_catch.csv")
+  # 
+  # write_csv(tot.fishing.average, "data/mfc_average_catch.csv")
   
   # by species by fleet, calculated based on average catch over a period
   # The calculation to go from annual mu to daily F seems to be correct
@@ -62,13 +62,13 @@ make_mfc <- function(all.goa.fisheries, fleet.list, group.list, goa.biomass){
   species.list <- group.list %>% 
     pull(Code) # all groups, even detritus etc
   
-  file.name <- "data/mfc_vector.prm"
+  file.name <- "data/mfc_vector_SELEX.prm"
   file.create(file.name)
   
-  mfc.data %>% 
-    distinct(gear_name) %>% 
-    arrange(gear_name) %>% 
-    write_csv("data/mfc_gears.csv")
+  # mfc.data %>% 
+  #   distinct(gear_name) %>% 
+  #   arrange(gear_name) %>% 
+  #   write_csv("data/mfc_gears.csv")
   
   mfc.list <- list()
   

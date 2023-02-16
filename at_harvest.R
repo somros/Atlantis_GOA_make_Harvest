@@ -7,7 +7,7 @@ library(data.table)
 
 # read in catch data for 1990
 source('make_dummy_catch.R')
-all.goa.fisheries <- fread("data/all_fisheries_goa.csv") %>% 
+all.goa.fisheries <- fread("data/all_fisheries_goa_SELEX.csv") %>% 
   as_tibble
 
 # this is catch by fleet
@@ -26,7 +26,21 @@ goa.biomass <- read_delim("data/GOA_BiomIndx.txt", delim = " ") %>%
   filter(Time==0) %>% 
   left_join(group.list, by="Code") %>% 
   dplyr::rename(atlantis_fg = Code) %>% 
-  dplyr::select(atlantis_fg, biomass_mt)  
+  dplyr::select(atlantis_fg, biomass_mt)
+
+# use GOA biomass by age as an option
+goa.biomass.selex <- biom_age <- read.table('data/GOA_AgeBiomIndx.txt', sep = ' ', header = T) %>%
+  filter(Time == 0) %>%
+  pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
+  separate_wider_delim(Code.Age, delim = '.', names = c('Code', 'Age')) %>%
+  select(-Time) %>%
+  left_join(selex, by = 'Code') %>%
+  mutate(idx = as.numeric(Age) - as.numeric(age_class)) %>%
+  filter(is.na(idx) | idx >= 0) %>%
+  group_by(Code) %>%
+  summarise(biomass_mt = sum(biomass_mt)) %>%
+  ungroup() %>%
+  rename(atlantis_fg = Code)
 
 # this is the list of fleets
 # this includes fleets that have 0 catch in the catch time series read in above
@@ -40,7 +54,7 @@ source('at_harvest_functions.R')
 source('make_ancillary_prm.R')
 
 #this generates the fishing mortality rates
-mfc.tibble <- make_mfc(all.goa.fisheries, fleet.list, group.list, goa.biomass)
+mfc.tibble <- make_mfc(all.goa.fisheries, fleet.list, group.list, goa.biomass.selex)
 
 #create at_harvest
 grp.file  <-  "data/GOA_Groups.csv" # grp file
@@ -48,9 +62,9 @@ fsh.file  <-  "data/goa_fleet_values.csv" # same as GOA_fisheries.csv but with a
 temp  <-  'data/PrmFishTemplate.csv' # this is a spreadsheet with fishing parameters
 bgm.file  <-  'data/GOA_WGS84_V4_final.bgm' # geometry
 cum.depths  <-  c(0, 30, 100, 200, 500, 1000, 4000) # depths
-harvest.file.name <-  "data/GOA_harvest_new.prm"
+harvest.file.name <-  "data/GOA_harvest_new_SELEX.prm"
 run.type  <- "future"#"historical"
-this.mfc <- "data/mfc_vector.prm"
+this.mfc <- "data/mfc_vector_SELEX.prm"
 
 make_at_harvest(grp.file, fsh.file, temp, bgm.file, cum.depths, harvest.file.name, run.type, this.mfc)
 

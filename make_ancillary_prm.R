@@ -4,6 +4,7 @@
 # At first, this will be geared toward building a template / placeholder with all GOA fleets inactive, and only the background F active,
 # for the purposes of completing model calibration
 # Note: many of these vectors are only needed for dynamic fishing, but we still need them for the model to run
+# UPDATE 2/15/2023 Adding XXX_mFC_startage vectors based on age at first selex instead of 0
 
 library(tidyverse)
 
@@ -21,6 +22,8 @@ n.fleets <- length(fleet.codes)
 bgm  <- readLines('data/GOA_WGS84_V4_final.bgm') # bgm file
 n.box    <- as.numeric(gsub('nbox', '', grep("nbox", bgm, value = TRUE)))
 
+# selex
+selex <- read.csv('data/age_at_selex.csv')
 
 # q_vector.prm
 # Catchability. Needed for all groups, as many entries as there are fisheries
@@ -52,12 +55,33 @@ for(i in 1:n.fleets){
 # startage_vector.prm
 # first age class that is affected by fishing
 # one vector per species with as many entries as there are fleets
-# Set all to 0, meaning that all age classes are vulnerable, but carefully set mFC and flagF_ so that we only fish groups/cohorts that we mean to fish
+# Option 1: Set all to 0, meaning that all age classes are vulnerable
+# Option 2: Set to age at 50% selex or age at 50% maturity
 file.create('data/startage_vector.prm')
 
-for(i in 1:n.grp){
-  cat(paste0(grp.codes[i], '_mFC_startage', ' ', n.fleets), file='data/startage_vector.prm', append=TRUE,'\n')
-  cat(rep(0, n.fleets), file='data/startage_vector.prm', append=TRUE, '\n')
+selectivity <- TRUE # set this
+
+if(selectivity){
+  
+  # for now this assumes that the fleet we work on is the first
+  for(i in 1:n.grp){
+    
+    this_age_selex <- selex %>% filter(Code == grp.codes[i]) %>% pull(age_class)
+    
+    if(length(this_age_selex)==0) this_age_selex <- 0
+    
+    cat(paste0(grp.codes[i], '_mFC_startage', ' ', n.fleets), file='data/startage_vector.prm', append=TRUE,'\n')
+    cat(c(this_age_selex, rep(0, n.fleets-1)), 
+        file='data/startage_vector.prm', append=TRUE, '\n')
+  }
+  
+} else {
+  
+  for(i in 1:n.grp){
+    cat(paste0(grp.codes[i], '_mFC_startage', ' ', n.fleets), file='data/startage_vector.prm', append=TRUE,'\n')
+    cat(rep(0, n.fleets), file='data/startage_vector.prm', append=TRUE, '\n')
+  }
+  
 }
 
 # agedistrib_vector.prm
