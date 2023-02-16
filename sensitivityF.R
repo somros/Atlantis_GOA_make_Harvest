@@ -6,12 +6,18 @@ library(data.table)
 library(here)
 library(readxl)
 
+# fg
 atlantis_fg <- read.csv('data/GOA_Groups.csv')
+# selex
+selex <- read.csv('data/age_at_selex.csv')
 
 # read biom and text. Use last time step?
 
 f_vec <- data.frame('Fval' = c(0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1, 1.25, 1.5, 2),
                     'dir' = c(831:836, 845:850))
+
+# do you want to plot with perceived F calculated on exploitable age classes?
+selectivity <- TRUE
 
 dir.list <- list.dirs('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/')
 
@@ -20,8 +26,17 @@ dir.list <- list.dirs('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/
 fished_grp <- atlantis_fg %>% filter(IsImpacted == 1) %>% pull(Code)
 all_cols <- c(paste0(fished_grp, '_Biomass'), paste0(fished_grp, '_Catch'))
 
+# get codes of age structured groups
+age_grp <- atlantis_fg %>% filter(NumCohorts > 1) %>% pull(Code)
+
 bio_catch_list <- list()
 realized_f_list <- list()
+
+# read in selectivity patterns for IsImpacted
+# These are knife-edge curves 
+# Note: given the issue with high contribution to total biomass of older age classes, this may result into a small difference from using 
+# read in biomass at age for age-structured groups
+# TODO: turn this into a function
 
 for(i in 1:nrow(f_vec)){
   
@@ -29,6 +44,7 @@ for(i in 1:nrow(f_vec)){
   this_run <- f_vec[which(f_vec$Fval==this_fval),2]
   this_dir <- dir.list[grepl(this_run, dir.list)]
   
+  # total biomass
   biodat_tmp <- read.table(paste0(this_dir, '/outputGOA0', this_run, '_testBiomIndx.txt'), sep = ' ', header = T)
   biodat <- biodat_tmp %>% 
     select(Time, any_of(fished_grp)) %>% 
@@ -37,6 +53,27 @@ for(i in 1:nrow(f_vec)){
   
   names(biodat) <- paste0(names(biodat), '_Biomass')
   
+  # use GOA biomass by age as an option
+  biodat_age_tmp <- read.table(paste0(this_dir, '/outputGOA0', this_run, '_testAgeBiomIndx.txt'), sep = ' ', header = T)
+  biodat_age <- biodat_age_tmp %>% 
+    slice_tail(n = 5) %>% 
+    summarise(across(-"Time", ~ mean(.x, na.rm = TRUE))) %>%
+    pivot_longer(everything(), names_to = 'Code.Age', values_to = 'biomass_mt') %>%
+    separate_wider_delim(Code.Age, delim = '.', names = c('Code', 'Age')) %>%
+    left_join(selex, by = 'Code') %>%
+    mutate(idx = as.numeric(Age) - as.numeric(age_class)) %>%
+    filter(is.na(idx) | idx >= 0) %>%
+    group_by(Code) %>%
+    summarise(biomass_mt = sum(biomass_mt)) %>%
+    ungroup() %>%
+    pivot_wider(names_from = Code, values_from = biomass_mt) %>% 
+    select(any_of(fished_grp))
+  
+  names(biodat_age) <- paste0(names(biodat_age), '_Biomass')
+  
+  if(selectivity) biodat <- biodat_age
+
+  # total catch
   catchdat_tmp <- read.table(paste0(this_dir, '/outputGOA0', this_run, '_testCatch.txt'), sep = ' ', header = T)
   catchdat <- catchdat_tmp %>% 
     select(Time, any_of(fished_grp)) %>% 
@@ -58,6 +95,20 @@ for(i in 1:nrow(f_vec)){
     pivot_longer(-Time, names_to = 'Code', values_to = 'biomass') %>%
     select(-Time)
   
+  # and for exploited age classes
+  biom_age_t1 <- biodat_age_tmp %>% 
+    filter(Time == 0) %>% 
+    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass') %>%
+    separate_wider_delim(Code.Age, delim = '.', names = c('Code', 'Age')) %>%
+    left_join(selex, by = 'Code') %>%
+    mutate(idx = as.numeric(Age) - as.numeric(age_class)) %>%
+    filter(is.na(idx) | idx >= 0) %>%
+    group_by(Code) %>%
+    summarise(biomass = sum(biomass)) %>%
+    ungroup() %>% 
+    filter(Code %in% fished_grp)
+  
+  # catch
   catch_t1 <- catchdat_tmp %>% 
     select(Time, any_of(fished_grp)) %>% 
     filter(Time == 365) %>%
@@ -65,6 +116,9 @@ for(i in 1:nrow(f_vec)){
     summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
     pivot_longer(-Time, names_to = 'Code', values_to = 'catch') %>%
     select(-Time)
+  
+  # calc realized f
+  if(selectivity)biom_t1 <- biom_age_t1
   
   f_t1 <- biom_t1 %>% left_join(catch_t1) %>%
     mutate(exp_rate = catch/biomass,
@@ -173,7 +227,7 @@ p <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p
-ggsave('sensitivity_stagger.png', p, width = 8, height = 40)
+ggsave('sensitivity_stagger_SELEX.png', p, width = 8, height = 40)
 
 # broken down in smaller groups
 # Tier 3
