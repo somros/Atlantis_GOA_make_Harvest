@@ -7,6 +7,11 @@
 # Consider background F (or a starting point) 25% of FMSY or M
 # This assumes that F in 2020 is comparable to F in 1990
 # This code also adds catch (0) for all other fleets, to have them as placeholders
+# UPDATE 2/15/2023
+# Added the option to calculate catch and in turn mFC on selected age classes
+# This is based on Atlantis' implementation of age selectivity, i.e. knife-edge 
+# For tier 3 we put this at the age class that results in >50% selex; for all others to age at 50% maturity
+
 library(tidyverse)
 library(readxl)
 library(data.table)
@@ -28,6 +33,25 @@ biom <- read.table('data/GOA_BiomIndx.txt', sep = ' ', header = T) %>%
   pivot_longer(-Time, names_to = 'Code', values_to = 'Biomass') %>%
   filter(Code %in% fg$Code) %>%
   select(-Time)
+
+# initial biomass at age from Atlantis output
+biom_age <- read.table('data/GOA_AgeBiomIndx.txt', sep = ' ', header = T) %>%
+  filter(Time == 0) %>%
+  pivot_longer(-Time, names_to = 'Code.Age', values_to = 'Biomass') %>%
+  separate_wider_delim(Code.Age, delim = '.', names = c('Code', 'Age')) %>%
+  select(-Time)
+
+# selectivity curves
+# These for now are implemented the way Atlantis interprets them: age 50% selex is the knife-edge for XXX_mFC_startage
+# These are built in selex.R in the Catch code, from selectivity curves for Tier 3 stocks provided by Martin and mapped from annual to 10 multi-year age classes
+# For Tier 4+ we approximate age at 50% selex as age at 50% maturity
+selex_tier3 <- read.csv('data/selex_10_age_classes.csv')
+selex_tier3 <- selex_tier3 %>% mutate(age_class = age_class - 1) # count from 0 like Atlantis
+
+age_mat <- read.table('data/age_mat.txt', sep = ' ')
+age_mat$V1 <- gsub('_age_mat', '', age_mat$V1)
+age_mat <- age_mat[,c(1,4)]
+colnames(age_mat) <- c('Code','age_class')
 
 # boxes
 bgm  <- readLines('data/GOA_WGS84_V4_final.bgm')
@@ -61,13 +85,53 @@ other_M <- read.csv('data/life_history_parameters.csv') %>%
 
 all <- rbind(tier_3_4_5, other_M)
 
-# calculate catch based on initial biomass and F
-dat <- biom %>%
-  left_join(all, by = 'Code') %>%
-  mutate(FMSY = replace_na(FMSY, 0),
-         FMSY_25 = FMSY/4,
-         mu = 1-exp(-FMSY_25), # proportion of exploited population
-         Catch = Biomass * mu) 
+# get age at 50% selectivity. For tier 3, use the curves; for everything else, use age at maturity as a proxy
+selex_tier3 <- selex_tier3 %>%
+  filter(selex_age_class > 0.5) %>%
+  group_by(Code) %>%
+  slice_min(age_class) %>%
+  ungroup() %>%
+  select(Code, age_class)
+
+selex_tier4plus <- age_mat %>% filter(Code %in% setdiff(age_mat$Code, unique(selex_tier3$Code)))
+
+selex <- rbind(selex_tier3, selex_tier4plus)
+
+# Because Atlantis will apply mFC as knife-edge, set all classes < age at selex as 0 biomass
+biom_age_selected <- biom_age %>%
+  left_join(selex, by = 'Code') %>%
+  mutate(idx = as.numeric(Age) - as.numeric(age_class)) %>%
+  filter(is.na(idx) | idx >= 0) %>%
+  group_by(Code) %>%
+  summarise(Biomass = sum(Biomass))
+
+# compare to tot biom
+# biom %>%
+#   mutate(Type = 'tot') %>%
+#   rbind(biom_age_selected %>% mutate(Type = 'age')) %>%
+#   ggplot(aes(Code, y = Biomass, color = Type))+
+#   geom_point()
+
+# get catch based on initial biomass (total or selected) and F 
+
+selected <- TRUE
+
+if(selected){
+  dat <- biom_age_selected %>%
+    left_join(all, by = 'Code') %>%
+    mutate(FMSY = replace_na(FMSY, 0),
+           FMSY_25 = FMSY/4,
+           mu = 1-exp(-FMSY_25), # proportion of exploited population
+           Catch = Biomass * mu)
+  
+} else {
+  dat <- biom %>%
+    left_join(all, by = 'Code') %>%
+    mutate(FMSY = replace_na(FMSY, 0),
+           FMSY_25 = FMSY/4,
+           mu = 1-exp(-FMSY_25), # proportion of exploited population
+           Catch = Biomass * mu)
+}
 
 # we need to add invertebrate catch. Since I don't have a sense of what the equivalent of FMSY (or M) should be, let's base this one off of catch time series 1990-2020
 # values will be in mg N s-1 for the first day of each month
@@ -151,7 +215,6 @@ bgF <- bgF %>%
             catch_tons = sum(catch_tons)) %>%
   ungroup()
 
-
 # add in all other fleets, for 1990, month 1, box 1, all catch 0
 month <- 1
 box <- 1
@@ -166,4 +229,4 @@ all_fleets <- all_fleets %>%
 # bind
 fleets_tmp <- rbind(bgF, all_fleets)
 
-write.csv(fleets_tmp, 'data/all_fisheries_goa.csv', row.names = F)
+write.csv(fleets_tmp, 'data/all_fisheries_goa_SELEX.csv', row.names = F)
