@@ -14,7 +14,7 @@ fleet_names <- fleets %>% pull(Name)
 n_fleets <- length(fleet_codes)
 
 # pull the catch by fishery file from the most recent output folder
-run <- 753
+run <- 912
 
 tune_mFC <- function(run){
   outdir <- paste0('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_', run)
@@ -37,10 +37,11 @@ tune_mFC <- function(run){
   # only keep time step 1
   catchout <- catchout %>%
     filter(Time == 365) %>%
+    distinct() %>%
     select(-Time)
   
   # fishery data
-  catchdata_tmp <- read.csv('data/all_fisheries_goa.csv')
+  catchdata_tmp <- read.csv('data/all_fisheries_goa_SELEX.csv')
   catchdata_tmp <- catchdata_tmp %>% select(-c(year,box,month,tot_catch_mt))
   
   # set this in the same format as catchout
