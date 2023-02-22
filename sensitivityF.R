@@ -13,8 +13,8 @@ selex <- read.csv('data/age_at_selex.csv')
 
 # read biom and text. Use last time step?
 
-f_vec <- data.frame('Fval' = c(0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1, 1.25, 1.5, 2),
-                    'dir' = c(831:836, 845:850))
+f_vec <- data.frame('Fval' = c(0, 0.05, 0.1, 0.15, 0.2, 0.3),# 0.5, 0.75, 1, 1.25, 1.5, 2),
+                    'dir' = c(915:920))# c(831:836, 845:850))
 
 # do you want to plot with perceived F calculated on exploitable age classes?
 selectivity <- TRUE
@@ -212,6 +212,23 @@ fmsy <- data.frame('Code' = to_plot) %>%
   left_join(atlantis_fg %>% select(Code, Name)) %>%
   mutate(FMSY_25 = FMSY/4)
 
+# make data frames for the horizontal lines for B0 and CMSY (COFL from stock assessments for Tier 3)
+# read in F and M
+ref_points <- read_xlsx('data/GOA MSY estimates tables.xlsx', sheet = 1, range = 'A3:J19') %>%
+  select(Stock, COFL, `B40%`) %>%
+  set_names(c('Stock', 'CMSY', 'B40')) %>%
+  mutate(CMSY = CMSY / 1000,
+         B0 = B40 / 40 * 100 / 1000,
+         Code = c('POL','COD','SBF','FFS','FFS','FFS','FFS','FFD',
+                  'REX','REX','ATF','FHS','POP','RFS','RFS','RFP')) %>%
+  group_by(Code) %>%
+  summarise(CMSY = sum(CMSY), B0 = sum(B0)) %>%
+  ungroup() %>%
+  left_join(atlantis_fg %>% select(Code, Name)) %>%
+  select(Name, CMSY, B0) %>%
+  set_names(c('Name', 'Catch', 'Biomass')) %>%
+  pivot_longer(-Name, names_to = 'Type', values_to = 'value')
+
 # make plots
   
 p <- for_plot %>%
@@ -222,12 +239,13 @@ p <- for_plot %>%
   geom_vline(data = fmsy_atlantis, aes(xintercept = f, group = Name), linetype = 'dashed', color = 'black')+
   geom_vline(data = fmsy, aes(xintercept = FMSY, group = Name), linetype = 'dashed', color = 'orange')+
   geom_vline(data = fmsy, aes(xintercept = FMSY_25, group = Name), linetype = 'dashed', color = 'blue')+
+  geom_hline(data = ref_points, aes(yintercept = value), linetype = 'dotted')+
   theme_bw()+
   labs(x = 'F as perceived by the model', y = '1000\'s of tons', color = 'F as model input')+
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p
-ggsave('sensitivity_stagger_SELEX.png', p, width = 8, height = 40)
+ggsave('sensitivity_stagger_SELEX_v3.png', p, width = 8, height = 40)
 
 # broken down in smaller groups
 # Tier 3
@@ -248,7 +266,7 @@ p1_1 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p1_1
-ggsave('sensitivity_tier3_1_1.png', p1_1, width = 5, height = 7)
+ggsave('sensitivity_tier3_1_SELEX_v2.png', p1_1, width = 5, height = 7)
 
 t3_2 <- c('FFS','FFD','REX','ATF','FHS')
 
@@ -266,7 +284,7 @@ p1_2 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p1_2
-ggsave('sensitivity_tier3_2_1.png', p1_2, width = 5, height = 7)
+ggsave('sensitivity_tier3_2_SELEX_v2.png', p1_2, width = 5, height = 7)
 
 # for methods
 p1_3 <- for_plot %>%
@@ -283,7 +301,7 @@ p1_3 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p1_3
-ggsave('sensitivity_tier3_all.png', p1_3, width = 7.5, height = 10)
+ggsave('sensitivity_tier3_all_SELEX_v2.png', p1_3, width = 7.5, height = 10)
 
 
 # Tier 4 - 5
@@ -303,7 +321,7 @@ p2 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p2
-ggsave('sensitivity_tier4and5_1.png', p2, width = 5, height = 7)
+ggsave('sensitivity_tier4and5_SELEX_v2.png', p2, width = 5, height = 7)
 
 # forage fish
 ff <- c('CAP','EUL','SAN','HER','FOS')
@@ -322,7 +340,7 @@ p3 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p3
-ggsave('sensitivity_forage_1.png', p3, width = 5, height = 7)
+ggsave('sensitivity_forage_SELEX_v2.png', p3, width = 5, height = 7)
 
 # migrating fish species
 mig <- c('SCH','SCM','SCO','SPI','SSO','HAK')
@@ -341,4 +359,4 @@ p4 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p4
-ggsave('sensitivity_migration_1.png', p4, width = 5, height = 7)
+ggsave('sensitivity_migration_SELEX_v2.png', p4, width = 5, height = 7)
