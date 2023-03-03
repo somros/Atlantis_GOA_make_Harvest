@@ -7,7 +7,7 @@ library(data.table)
 
 # read in catch data for 1990
 source('make_dummy_catch.R')
-all.goa.fisheries <- fread("data/all_fisheries_goa_SELEX.csv") %>% 
+all.goa.fisheries <- fread("data/all_fisheries_goa_100FMSY.csv") %>% 
   as_tibble
 
 # this is catch by fleet
@@ -29,6 +29,9 @@ goa.biomass <- read_delim("data/GOA_BiomIndx.txt", delim = " ") %>%
   dplyr::select(atlantis_fg, biomass_mt)
 
 # use GOA biomass by age as an option
+# selex
+selex <- read.csv('data/age_at_selex.csv')
+
 goa.biomass.selex <- biom_age <- read.table('data/GOA_AgeBiomIndx.txt', sep = ' ', header = T) %>%
   filter(Time == 0) %>%
   pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
@@ -54,7 +57,7 @@ source('at_harvest_functions.R')
 source('make_ancillary_prm.R')
 
 #this generates the fishing mortality rates
-mfc.tibble <- make_mfc(all.goa.fisheries, fleet.list, group.list, goa.biomass.selex)
+mfc.tibble <- make_mfc(all.goa.fisheries, fleet.list, group.list, goa.biomass)
 
 #create at_harvest
 grp.file  <-  "data/GOA_Groups.csv" # grp file
@@ -62,9 +65,9 @@ fsh.file  <-  "data/goa_fleet_values.csv" # same as GOA_fisheries.csv but with a
 temp  <-  'data/PrmFishTemplate.csv' # this is a spreadsheet with fishing parameters
 bgm.file  <-  'data/GOA_WGS84_V4_final.bgm' # geometry
 cum.depths  <-  c(0, 30, 100, 200, 500, 1000, 4000) # depths
-harvest.file.name <-  "data/GOA_harvest_new_SELEX.prm"
+harvest.file.name <-  "data/GOA_harvest_100FMSY.prm"
 run.type  <- "future"#"historical"
-this.mfc <- "data/mfc_vector_SELEX.prm"
+this.mfc <- "data/mfc_vector.prm"
 
 make_at_harvest(grp.file, fsh.file, temp, bgm.file, cum.depths, harvest.file.name, run.type, this.mfc)
 

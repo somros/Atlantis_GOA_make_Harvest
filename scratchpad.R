@@ -24,4 +24,12 @@ mfc <- 1-exp(-fmort / 365)
 biom2 <- c(biom, rep(0,365))
 for(i in 2:366){biom2[i] <- biom2[i-1]-biom2[i-1]*mfc}
 biom2
+# 
+# mfc <- 1-exp(-fmort / 365)
+# 
+# 1-mfc <- exp(-fmort / 365)
+# 
+# log(1 - mfc) <- (-fmort / 365)
+# 
+# fmort <- -365 * log(1 - 0.0001)
 

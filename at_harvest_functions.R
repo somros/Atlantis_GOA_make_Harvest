@@ -62,7 +62,7 @@ make_mfc <- function(all.goa.fisheries, fleet.list, group.list, goa.biomass){
   species.list <- group.list %>% 
     pull(Code) # all groups, even detritus etc
   
-  file.name <- "data/mfc_vector_SELEX.prm"
+  file.name <- "data/mfc_vector.prm"
   file.create(file.name)
   
   # mfc.data %>% 

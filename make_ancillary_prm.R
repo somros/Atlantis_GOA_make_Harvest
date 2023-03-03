@@ -59,7 +59,7 @@ for(i in 1:n.fleets){
 # Option 2: Set to age at 50% selex or age at 50% maturity
 file.create('data/startage_vector.prm')
 
-selectivity <- TRUE # set this
+selectivity <- FALSE # set this
 
 if(selectivity){
   

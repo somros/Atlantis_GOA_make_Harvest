@@ -118,14 +118,15 @@ biom_age_selected <- biom_age %>%
 
 # get catch based on initial biomass (total or selected) and F 
 
-selected <- TRUE
+selected <- FALSE
 
 if(selected){
   dat <- biom_age_selected %>%
     left_join(all, by = 'Code') %>%
     mutate(FMSY = replace_na(FMSY, 0),
            FMSY_25 = FMSY/4,
-           mu = 1-exp(-FMSY_25), # proportion of exploited population
+           FMSY_50 = FMSY/2,
+           mu = 1-exp(-FMSY_25), # proportion of exploited population, CHANGE THIS FOR DIFFERENT FRACTIONS OF FMSY
            Catch = Biomass * mu)
   
 } else {
@@ -133,7 +134,8 @@ if(selected){
     left_join(all, by = 'Code') %>%
     mutate(FMSY = replace_na(FMSY, 0),
            FMSY_25 = FMSY/4,
-           mu = 1-exp(-FMSY_25), # proportion of exploited population
+           FMSY_50 = FMSY/2,
+           mu = 1-exp(-FMSY_25), # proportion of exploited population, CHANGE THIS FOR DIFFERENT FRACTIONS OF FMSY
            Catch = Biomass * mu)
 }
 
@@ -186,7 +188,7 @@ catch_inverts <- do.call('rbind', catch_by_box) %>%
   group_by(Code) %>%
   summarise(Catch_mt = sum(Catch_mt)) %>%
   ungroup() %>%
-  mutate(Catch_background = Catch_mt / 4) %>% # assuming they have been fished at MSY 1991-2020, probably wrong
+  mutate(Catch_background = Catch_mt / 4) %>% # assuming they have been fished at MSY 1991-2020, probably wrong # proportion of exploited population, CHANGE THIS FOR DIFFERENT FRACTIONS OF FMSY
   filter(Catch_background > 0) %>% # we have no catches for KIN, BFF, COR, PWN, SPG, although they are indicated as impacted in the Groups.csv file
   select(Code, Catch_background) 
 
@@ -233,4 +235,4 @@ all_fleets <- all_fleets %>%
 # bind
 fleets_tmp <- rbind(bgF, all_fleets)
 
-write.csv(fleets_tmp, 'data/all_fisheries_goa_SELEX.csv', row.names = F)
+write.csv(fleets_tmp, 'data/all_fisheries_goa_100FMSY.csv', row.names = F)
