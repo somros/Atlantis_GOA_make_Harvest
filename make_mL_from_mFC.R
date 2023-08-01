@@ -23,14 +23,18 @@ groups_mL <- gsub('_mL.*', '', groups_mL)
 
 # for each group in groups_mL, go dig out the value of mFC, modify it, and and write it out 
 
-multiplier <- 0.125
-do_all <- FALSE
-new_mL_file <- paste('C:/Users/Alberto Rovellini/Documents/GOA/F/at_harvestR_GOA/mFC_tuning/','mL_vec_BY_', multiplier, '_all_', do_all, '.txt', sep = '')
+multiplier <- 0.5
+do_all <- TRUE
+do_adults <- TRUE
+do_juveniles <- TRUE
+new_mL_file <- paste('C:/Users/Alberto Rovellini/Documents/GOA/F/at_harvestR_GOA/mFC_tuning/','mL_vec_BY_', multiplier, '_all_', do_all, '_AJ.txt', sep = '')
 file.create(new_mL_file)
 
 # optional list of groups
 
-to_do <- c("COD", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", "RFS", "RFP", "THO", "DFS", "DFD", "SCU", "CAP", "SAN", "FOS")
+to_do <- c("COD", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", 
+           "RFS", "RFP", "THO", "DFS", "DFD", "SCU", "CAP", "SAN", "FOS",
+           "SCH", "SCM", "SCO", "SSO", "SPI", "HAK")
 
 for( i in 1:length(groups_mL)){
   
@@ -44,10 +48,18 @@ for( i in 1:length(groups_mL)){
     
     this_mFC_value <- as.numeric(unlist(strsplit(this_mFC[grep(this_group, this_mFC)+1], ' '))[1])
     
-    new_mL <- this_mFC_value * multiplier
+    new_mL <- juv_mL <- adult_mL <- this_mFC_value * multiplier
+    
+    if(!do_juveniles){
+      juv_mL <- 0
+    }
+    
+    if(!do_adults){
+      adult_mL <- 0
+    }
     
     XXX_mL_line <- this_mL[grep(this_group, this_mL)]
-    new_mL_line <- paste(0, new_mL, sep = ' ')
+    new_mL_line <- paste(juv_mL, adult_mL, sep = ' ')
     
     cat(XXX_mL_line, file=new_mL_file, append=TRUE,'\n\n')
     cat(new_mL_line, file=new_mL_file, append=TRUE, '\n\n\n')
@@ -56,12 +68,20 @@ for( i in 1:length(groups_mL)){
     
     this_mFC_value <- as.numeric(unlist(strsplit(this_mFC[grep(this_group, this_mFC)+1], ' '))[1])
     
-    new_mL <- this_mFC_value * multiplier
+    new_mL <- juv_mL <- adult_mL <- this_mFC_value * multiplier
+    
+    if(!do_juveniles){
+      juv_mL <- 0
+    }
+    
+    if(!do_adults){
+      adult_mL <- 0
+    }
     
     XXX_mL_line <- this_mL[grep(this_group, this_mL)]
     
     if(this_group %in% to_do){
-      new_mL_line <- paste(0, new_mL, sep = ' ')
+      new_mL_line <- paste(juv_mL, adult_mL, sep = ' ')
     } else {
       new_mL_line <- paste(0, 0, sep = ' ')
     }
@@ -70,8 +90,6 @@ for( i in 1:length(groups_mL)){
     cat(new_mL_line, file=new_mL_file, append=TRUE, '\n\n\n')
     
   }
-  
-  
   
 }
 

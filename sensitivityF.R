@@ -14,10 +14,10 @@ selex <- read.csv('data/age_at_selex.csv')
 # read biom and text. Use last time step?
 
 f_vec <- data.frame('Fval' = c(0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1, 1.25, 1.5, 2),
-                    'dir' = c(915:926))# c(831:836, 845:850))
+                    'dir' = c(1238:1249))# c(831:836, 845:850))
 
 # do you want to plot with perceived F calculated on exploitable age classes?
-selectivity <- FALSE
+selectivity <- TRUE
 
 dir.list <- list.dirs('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/')
 
@@ -45,7 +45,7 @@ for(i in 1:nrow(f_vec)){
   this_dir <- dir.list[grepl(this_run, dir.list)]
   
   # total biomass
-  biodat_tmp <- read.table(paste0(this_dir, '/outputGOA0', this_run, '_testBiomIndx.txt'), sep = ' ', header = T)
+  biodat_tmp <- read.table(paste0(this_dir, '/outputGOA0', 1238, '_testBiomIndx.txt'), sep = ' ', header = T)
   biodat <- biodat_tmp %>% 
     select(Time, any_of(fished_grp)) %>% 
     slice_tail(n = 5) %>% 
@@ -54,7 +54,7 @@ for(i in 1:nrow(f_vec)){
   names(biodat) <- paste0(names(biodat), '_Biomass')
   
   # use GOA biomass by age as an option
-  biodat_age_tmp <- read.table(paste0(this_dir, '/outputGOA0', this_run, '_testAgeBiomIndx.txt'), sep = ' ', header = T)
+  biodat_age_tmp <- read.table(paste0(this_dir, '/outputGOA0', 1238, '_testAgeBiomIndx.txt'), sep = ' ', header = T)
   biodat_age <- biodat_age_tmp %>% 
     slice_tail(n = 5) %>% 
     summarise(across(-"Time", ~ mean(.x, na.rm = TRUE))) %>%
@@ -74,7 +74,7 @@ for(i in 1:nrow(f_vec)){
   if(selectivity) biodat <- biodat_age
 
   # total catch
-  catchdat_tmp <- read.table(paste0(this_dir, '/outputGOA0', this_run, '_testCatch.txt'), sep = ' ', header = T)
+  catchdat_tmp <- read.table(paste0(this_dir, '/outputGOA0', 1238, '_testCatch.txt'), sep = ' ', header = T)
   catchdat <- catchdat_tmp %>% 
     select(Time, any_of(fished_grp)) %>% 
     slice_tail(n = 5) %>% 
@@ -245,7 +245,7 @@ p <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p
-ggsave('sensitivity_stagger_SELEX_v4.png', p, width = 8, height = 40)
+ggsave('plots/mFC_sensitivity_selected.png', p, width = 8, height = 40)
 
 # broken down in smaller groups
 # Tier 3
@@ -266,7 +266,7 @@ p1_1 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p1_1
-ggsave('sensitivity_tier3_1_SELEX_v4.png', p1_1, width = 5, height = 7)
+ggsave('plots/mFC_sensitivity_selected_tier3_1.png', p1_1, width = 5, height = 7)
 
 t3_2 <- c('FFS','FFD','REX','ATF','FHS')
 
@@ -284,7 +284,7 @@ p1_2 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p1_2
-ggsave('sensitivity_tier3_2_SELEX_v4.png', p1_2, width = 5, height = 7)
+ggsave('plots/mFC_sensitivity_selected_tier3_2.png', p1_2, width = 5, height = 7)
 
 # for methods
 p1_3 <- for_plot %>%
@@ -301,7 +301,7 @@ p1_3 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p1_3
-ggsave('sensitivity_tier3_all_SELEX_v4.png', p1_3, width = 7.5, height = 10)
+ggsave('plots/mFC_sensitivity_selected_tier3_all.png', p1_3, width = 7.5, height = 10)
 
 
 # Tier 4 - 5
@@ -321,7 +321,7 @@ p2 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p2
-ggsave('sensitivity_tier4and5_SELEX_v4.png', p2, width = 5, height = 7)
+ggsave('plots/mFC_sensitivity_selected_tier4and5.png', p2, width = 5, height = 7)
 
 # forage fish
 ff <- c('CAP','EUL','SAN','HER','FOS')
@@ -340,7 +340,7 @@ p3 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p3
-ggsave('sensitivity_forage_SELEX_v4.png', p3, width = 5, height = 7)
+ggsave('plots/mFC_sensitivity_selected_forage.png', p3, width = 5, height = 7)
 
 # migrating fish species
 mig <- c('SCH','SCM','SCO','SPI','SSO','HAK')
@@ -359,4 +359,4 @@ p4 <- for_plot %>%
   ggh4x::facet_grid2(Name~Type, scales = 'free', independent = 'all')
 
 p4
-ggsave('sensitivity_migration_SELEX_v4.png', p4, width = 5, height = 7)
+ggsave('plots/mFC_sensitivity_selected_migration.png', p4, width = 5, height = 7)
