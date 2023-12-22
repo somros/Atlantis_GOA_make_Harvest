@@ -31,8 +31,8 @@ fofl <- read_xlsx("data/GOA MSY estimates tables.xlsx", sheet = 1, range = 'A3:J
 # fix cod with info from Pete Hulson:
 fofl[fofl$Code == "COD","FOFL"] <- 0.5100000
 
-# add halibut (2M = 2 * 0.2 = 0.4)
-fofl <- rbind(fofl, data.frame("Code"="HAL","FOFL"= 2*0.2))
+# add halibut (use M = 0.2 as a proxy for FMSY)
+fofl <- rbind(fofl, data.frame("Code"="HAL","FOFL"= 0.2))
 
 # now get 1/4 FOFL
 fofl <- fofl %>%
