@@ -14,7 +14,7 @@ fleet_names <- fleets %>% pull(Name)
 n_fleets <- length(fleet_codes)
 
 # pull the catch by fishery file from the most recent output folder
-run <- 962
+run <- 1516
 
 tune_mFC <- function(run){
   outdir <- paste0('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_', run)
@@ -41,7 +41,7 @@ tune_mFC <- function(run){
     select(-Time)
   
   # fishery data
-  catchdata_tmp <- read.csv('data/all_fisheries_goa_100FMSY.csv')
+  catchdata_tmp <- read.csv('data/all_fisheries_goa_25FMSY_OY.csv')
   catchdata_tmp <- catchdata_tmp %>% select(-c(year,box,month,tot_catch_mt))
   
   # set this in the same format as catchout
@@ -63,19 +63,19 @@ tune_mFC <- function(run){
     mutate_all(~ifelse(is.nan(.), 0, .))
   
   # split this into groups to get a range of how bad it was at first
-  # tier3 <- c('POL','COD','ATF','SBF','POP','REX','FFS','FHS','RFS','FFD')
-  # tier_45 <- c('DOG','SKL','SKB','SKO','RFP','RFD','THO')
-  # migrating <- c('HAK','SPI','SCH','SCM','SCO','SPI','SSO')
-  # topverts <- c('WHT','WHB','DOL','KWT','KWR','SSL','PIN','BSF','BSI','BDF','BDI','SHD','WHH','WHG','SHP')
-  # forage <- c('SAN','CAP','FOS','EUL','HER')
-  # other <- c(setdiff(expToObs$Code, c(tier3, tier_45, migrating, topverts, forage)))
-  # 
-  # expToObs %>% filter(Code %in% tier3) %>% pull(background) %>% range()
-  # expToObs %>% filter(Code %in% tier_45) %>% pull(background) %>% range()
-  # expToObs %>% filter(Code %in% migrating) %>% pull(background) %>% range()
-  # expToObs %>% filter(Code %in% topverts) %>% pull(background) %>% range()
-  # expToObs %>% filter(Code %in% forage) %>% pull(background) %>% range()
-  # expToObs %>% filter(Code %in% other) %>% pull(background) %>% range()
+  tier3 <- c('POL','COD','ATF','SBF','POP','REX','FFS','FHS','RFS','FFD','HAL')
+  tier_45 <- c('DOG','SKL','SKB','SKO','RFP','RFD','THO')
+  migrating <- c('HAK','SPI','SCH','SCM','SCO','SPI','SSO')
+  topverts <- c('WHT','WHB','DOL','KWT','KWR','SSL','PIN','BSF','BSI','BDF','BDI','SHD','WHH','WHG','SHP')
+  forage <- c('SAN','CAP','FOS','EUL','HER')
+  other <- c(setdiff(expToObs$Code, c(tier3, tier_45, migrating, topverts, forage)))
+
+  expToObs %>% filter(Code %in% tier3) %>% pull(background) %>% range()
+  expToObs %>% filter(Code %in% tier_45) %>% pull(background) %>% range()
+  expToObs %>% filter(Code %in% migrating) %>% pull(background) %>% range()
+  expToObs %>% filter(Code %in% topverts) %>% pull(background) %>% range()
+  expToObs %>% filter(Code %in% forage) %>% pull(background) %>% range()
+  expToObs %>% filter(Code %in% other) %>% pull(background) %>% range()
   
   # now for the tricky part, alter the harvest.prm
   harvestPrm <- readLines(harvestPrm_file)
