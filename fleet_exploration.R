@@ -26,10 +26,40 @@ fleets <- readRDS("fleets/fleet_total_catch_atl.RDS")
 fleet_key <- read.csv("fleets/fleet_Atlantis.csv")
 grps <- read.csv("data/GOA_Groups.csv")
 
+# read in spatial data
+goa_bgm <- read_bgm("data/GOA_WGS84_V4_final.bgm")
+goa_sf <- goa_bgm %>% box_sf()
+st_crs(goa_sf) <- st_crs(attr(goa_sf$geometry, "crs")$proj)
+boundary_boxes <- goa_sf %>% filter(boundary == TRUE) %>% pull(box_id) # get boundary boxes
+
+# coast shapefile
+coast <- maps::map(database = 'worldHires', regions = c('USA','Canada'), plot = FALSE, fill=TRUE)
+
+coast_sf <- coast %>% 
+  st_as_sf(crs = 4326) %>% 
+  st_transform(crs = st_crs(goa_sf)) %>% 
+  st_combine() %>%
+  st_crop(goa_sf %>% st_bbox())
+
 # join 
 fleets <- fleets %>%
   left_join(fleet_key, by = c("fleet"="Fleet")) %>%
   left_join(grps %>% select(Code, LongName), by = c("spp"="Code"))
+
+# make a summary table for the fleets, ordered by recent catch
+fleets_summary <- fleets %>%
+  filter(year > 2015) %>%
+  group_by(year, fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area) %>%
+  summarize(catch_mt = sum(weight_mton)) %>%
+  group_by(fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area) %>%
+  summarize(catch_mt = mean(catch_mt)) %>%
+  ungroup() %>%
+  select(Primary.Spp, Gear, Fishing.Area, Landing.Area, catch_mt, fleet) %>%
+  arrange(-catch_mt)
+
+colnames(fleets_summary) <- c("Primary target", "Gear", "Fishing area", "Landing area", "Mean catch 2016-2021 (mt)")
+
+# write.csv(fleets_summary, "fleets/fleets_summary_by_recent_catch.csv", row.names = F)
 
 # From Adam:
 # The spatial catch data represented by fish tickets and catch accounting data are statistical 
@@ -65,7 +95,7 @@ for(i in 1:length(fleet_names)){
   
   # filter df to that fleet
   this_fleet <- fleets %>%
-    filter(fleet == this_fleet_name)
+    filter(fleet == this_fleet_name, year > 2007)
   
   # define gear, target, fishing area, landing area
   this_target <- this_fleet %>% pull(Primary.Spp) %>% unique()
@@ -82,7 +112,8 @@ for(i in 1:length(fleet_names)){
     labs(title = paste0("Target = ", this_target, "\n",
                        "Gear = ", this_gear, "\n",
                        "Fishing area = ", this_fishing_area, "\n",
-                       "Landing area = ", this_landing_area))
+                       "Landing area = ", this_landing_area))+
+    guides(fill = guide_legend(ncol = 2))
   
   # save plot
   ggsave(paste0("fleets/area_chart_by_fleet/", this_fleet_name, ".png"), area_chart_by_fleet, width = 8, height = 6)
@@ -227,3 +258,65 @@ comp %>%
 # overall, it likely does not matter so much, because this F will require calibration anyway, until it yields catch that is in the ballpark of the catch for the desired period
 # my catch reconstruction only goes to 2020
 # 
+
+# Spatial analysis --------------------------------------------------------
+
+# map catches in space for the top key fleets
+# make a summary table for the fleets, ordered by recent catch
+fleets_spatial <- fleets %>%
+  filter(year > 2015) %>%
+  group_by(year, fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, box_id) %>%
+  summarize(catch_mt = sum(weight_mton)) %>%
+  group_by(fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, box_id) %>%
+  summarize(catch_mt = mean(catch_mt)) %>%
+  ungroup()
+
+# make it spatial
+fleets_spatial <- goa_sf %>%
+  select(box_id) %>%
+  left_join(fleets_spatial, by = "box_id")
+
+for(i in 1:length(fleet_names)){
+  
+  # pick out a fleet
+  this_fleet_name <- fleet_names[i]
+  
+  # filter df to that fleet
+  this_fleet <- fleets_spatial %>%
+    filter(fleet == this_fleet_name)
+  
+  # define gear, target, fishing area, landing area
+  this_target <- this_fleet %>% pull(Primary.Spp) %>% unique()
+  this_gear <- this_fleet %>% pull(Gear) %>% unique()
+  this_fishing_area <- this_fleet %>% pull(Fishing.Area) %>% unique()
+  this_landing_area <- this_fleet %>% pull(Landing.Area) %>% unique()
+  
+  area_chart_by_fleet <-  ggplot()+
+    geom_sf(data = this_fleet, aes(fill = catch_mt))+
+    geom_sf(data = coast_sf)+
+    scale_fill_viridis()+
+    theme_bw()+
+    labs(title = paste0("Target = ", this_target, "\n",
+                        "Gear = ", this_gear, "\n",
+                        "Fishing area = ", this_fishing_area, "\n",
+                        "Landing area = ", this_landing_area))
+  
+  # save plot
+  ggsave(paste0("fleets/maps_by_fleet_recent_catch/", this_fleet_name, ".png"), area_chart_by_fleet, width = 8, height = 4)
+  
+}
+
+# plot
+fleets_spatial %>%
+  filter(fleet %in% (fleets_summary %>% slice_head(n = 4) %>% pull(fleet))) %>%
+  ggplot()+
+  geom_sf(fill = catch_mt) %>%
+  scale_fill_viridis()+
+  theme_bw()+
+  labs(title = paste0("Target = ", this_target, "\n",
+                      "Gear = ", this_gear, "\n",
+                      "Fishing area = ", this_fishing_area, "\n",
+                      "Landing area = ", this_landing_area))
+  
+
+
