@@ -1,10 +1,10 @@
 # Alberto Rovellini
 # 03/26/2024
-# This document explores the fleet structure that Adam developed from metier analysis of GOA fish tickets
+# This code explores the fleet structure that Adam developed from metier analysis of GOA fish tickets
 # it also identifies possible gaps in the information
 # Things to look for:
 # Fleet names
-# Flet target species
+# Fleet target species
 # Annual catches per fleet?
 # Links with fish ticket / catch data (gear, target, port, etc...). Likely will need to do a new pull from AKFIN
 # Spatial information - can we derive a footprint from this data?
@@ -206,12 +206,20 @@ for(i in 1:length(fleet_names)){
                         "Gear = ", this_gear, "\n",
                         "Fishing area = ", this_fishing_area, "\n",
                         "Landing area = ", this_landing_area))+
-    guides(fill = guide_legend(ncol = 2))
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+ # Rotates x-axis labels
+    theme(legend.position = "bottom")+
+    guides(fill = guide_legend(ncol = 4))
   
   # save plot
   ggsave(paste0("fleets/catch_by_port/", this_fleet_name, ".png"), bar_ports, width = 8, height = 6)
   
 }
+
+# Adam's product contains port information so it is possible to parse out the catch of a fleet by port
+# One way to do it is similar to what martin has done for CEATTLE
+# We have catch from a fleet and we split it by the historical apportionment
+# This assumes that fleets will keep landing to the same ports in the future, which we know is not true
+# But it is as dynamic as we can get
 
 # Comparison with catch reconstruction for catch.ts -----------------------
 
@@ -255,7 +263,6 @@ all_boxes <- 0:108
 
 # separate AK boxes from BC boxes
 ak_boxes <- all_boxes[all_boxes < 92]
-bc_boxes <- all_boxes[all_boxes > 91]
 
 # Alaska first
 
@@ -271,7 +278,7 @@ for(b in 1:length(ak_boxes)){
 
 all_ak <- bind_rows(ak_data)
 
-# not doing canada because Adam's data is from AK
+# not doing Canada because Adam's data is from AK
 
 # together
 all_catch <- all_ak
