@@ -20,6 +20,9 @@ library(viridis)
 
 select <- dplyr::select
 
+
+# Read in data ------------------------------------------------------------
+
 # read in RDS object from Adam
 # read fleets and fleet keys
 fleets <- readRDS("fleets/fleet_total_catch_atl.RDS")
@@ -46,6 +49,9 @@ fleets <- fleets %>%
   left_join(fleet_key, by = c("fleet"="Fleet")) %>%
   left_join(grps %>% select(Code, LongName), by = c("spp"="Code"))
 
+
+# Summary table of the 21 fleets ------------------------------------------
+
 # make a summary table for the fleets, ordered by recent catch
 fleets_summary <- fleets %>%
   filter(year > 2015) %>%
@@ -61,30 +67,8 @@ colnames(fleets_summary) <- c("Primary target", "Gear", "Fishing area", "Landing
 
 # write.csv(fleets_summary, "fleets/fleets_summary_by_recent_catch.csv", row.names = F)
 
-# From Adam:
-# The spatial catch data represented by fish tickets and catch accounting data are statistical 
-# areas defined by the ADFG, which differ from the spatial boxes used in the Atlantis model. 
-# Catch in ADFG statistical areas are converted to Atlantis box by calculating the overlap 
-# between the ADFG area and each Atlantis box. The catch is apportioned to the Atlantis boxes 
-# according to the proportion of the statistical area the box overlaps with; e.g., if a given 
-# Atlantis box overlaps 50% with an ADFG statistical area, then 50% of the catch in that statistical 
-# area will be attributed to that Atlantis box. This may create issues for boundary boxes where little 
-# fishing occurs if an ADFG statistical area with significant fishing overlaps with it, creating an erroneous spatial imputation of catch. 
 
-# This suggests that the numbers in the RDS object from Adam should be total catch by fleet accounting for both tickets and catch accounting data
-# But, to get a somewhat realistic F, we'd need to ensure that this captures global catch to satisfation
-# do some vieweing and compare to:
-# 1. stock assessment catch reconstructions
-# 2. catch time series we did
-
-# We will need to turn these into F's. If they are in line with the catch.ts data and/or the stock assessment catch reconstruction,
-# we'll need to get best estimates of stock status (we have those) and get F based on catch (remember selex here)
-# how do we parameterize selectivity for these?
-
-# Adam recommends that the evaluation of F is done with data after 2008
-
-# Some visualization:
-# By fleet, by species, all areas
+# Total catch by fleet of each species, no areas -------------------------------
 # for this to be informative, let's break it down into one plot per fleet, with only the needed species
 fleet_names <- unique(fleets$fleet)
 
@@ -120,7 +104,8 @@ for(i in 1:length(fleet_names)){
   
 }
 
-# now view total catch by species irrespective of fleet and area
+# Total catch by species irrespective of fleets and areas -----------------
+
 fleets_total <- fleets %>%
   group_by(year, LongName) %>%
   summarize(catch_mt = sum(weight_mton))
@@ -132,6 +117,125 @@ fleets_total_plot <- fleets_total %>%
   theme_bw()+
   facet_wrap(~LongName, scales = "free")
 
+# Spatial analysis --------------------------------------------------------
+
+# map catches in space for the top key fleets
+# make a summary table for the fleets, ordered by recent catch
+fleets_spatial <- fleets %>%
+  filter(year > 2015) %>%
+  group_by(year, fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, box_id) %>%
+  summarize(catch_mt = sum(weight_mton)) %>%
+  group_by(fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, box_id) %>%
+  summarize(catch_mt = mean(catch_mt)) %>%
+  ungroup()
+
+# make it spatial
+fleets_spatial <- goa_sf %>%
+  select(box_id) %>%
+  left_join(fleets_spatial, by = "box_id")
+
+for(i in 1:length(fleet_names)){
+  
+  # pick out a fleet
+  this_fleet_name <- fleet_names[i]
+  
+  # filter df to that fleet
+  this_fleet <- fleets_spatial %>%
+    filter(fleet == this_fleet_name)
+  
+  # define gear, target, fishing area, landing area
+  this_target <- this_fleet %>% pull(Primary.Spp) %>% unique()
+  this_gear <- this_fleet %>% pull(Gear) %>% unique()
+  this_fishing_area <- this_fleet %>% pull(Fishing.Area) %>% unique()
+  this_landing_area <- this_fleet %>% pull(Landing.Area) %>% unique()
+  
+  map_by_fleet <-  ggplot()+
+    geom_sf(data = this_fleet, aes(fill = catch_mt))+
+    geom_sf(data = coast_sf)+
+    scale_fill_viridis()+
+    theme_bw()+
+    labs(title = paste0("Target = ", this_target, "\n",
+                        "Gear = ", this_gear, "\n",
+                        "Fishing area = ", this_fishing_area, "\n",
+                        "Landing area = ", this_landing_area))
+  
+  # save plot
+  ggsave(paste0("fleets/maps_by_fleet_recent_catch/", this_fleet_name, ".png"), map_by_fleet, width = 8, height = 4)
+  
+}
+
+# allocation bled into the boundary boxes, either because I did not explain that they should have been ignored or because
+# the ADF&G statistical areas (squares) overlap with them. 
+# Either way, we will need to handle those either by just dropping catches in those boxes, or by re-allocating it to neighboring boxes
+
+# Port allocation ---------------------------------------------------------
+
+# The data from Adam has port information. 
+unique(fleets$port)
+
+# Can we, for each fleet, allocate what went to which port?
+fleets_by_port <- fleets %>%
+  filter(year > 2015) %>%
+  group_by(year, fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, port, LongName) %>%
+  summarize(catch_mt = sum(weight_mton)) %>%
+  group_by(fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, port, LongName) %>%
+  summarize(catch_mt = mean(catch_mt)) %>%
+  ungroup()
+
+# plot
+for(i in 1:length(fleet_names)){
+  
+  # pick out a fleet
+  this_fleet_name <- fleet_names[i]
+  
+  # filter df to that fleet
+  this_fleet <- fleets_by_port %>%
+    filter(fleet == this_fleet_name)
+  
+  # define gear, target, fishing area, landing area
+  this_target <- this_fleet %>% pull(Primary.Spp) %>% unique()
+  this_gear <- this_fleet %>% pull(Gear) %>% unique()
+  this_fishing_area <- this_fleet %>% pull(Fishing.Area) %>% unique()
+  this_landing_area <- this_fleet %>% pull(Landing.Area) %>% unique()
+  
+  bar_ports <-  this_fleet %>%
+    ggplot()+
+    geom_bar(aes(x = port, y = catch_mt, fill = LongName), stat = "identity", position = "stack")+
+    theme_bw()+
+    labs(title = paste0("Target = ", this_target, "\n",
+                        "Gear = ", this_gear, "\n",
+                        "Fishing area = ", this_fishing_area, "\n",
+                        "Landing area = ", this_landing_area))+
+    guides(fill = guide_legend(ncol = 2))
+  
+  # save plot
+  ggsave(paste0("fleets/catch_by_port/", this_fleet_name, ".png"), bar_ports, width = 8, height = 6)
+  
+}
+
+# Comparison with catch reconstruction for catch.ts -----------------------
+
+# From Adam:
+# The spatial catch data represented by fish tickets and catch accounting data are statistical 
+# areas defined by the ADFG, which differ from the spatial boxes used in the Atlantis model. 
+# Catch in ADFG statistical areas are converted to Atlantis box by calculating the overlap 
+# between the ADFG area and each Atlantis box. The catch is apportioned to the Atlantis boxes 
+# according to the proportion of the statistical area the box overlaps with; e.g., if a given 
+# Atlantis box overlaps 50% with an ADFG statistical area, then 50% of the catch in that statistical 
+# area will be attributed to that Atlantis box. This may create issues for boundary boxes where little 
+# fishing occurs if an ADFG statistical area with significant fishing overlaps with it, creating an erroneous spatial imputation of catch. 
+
+# This suggests that the numbers in the RDS object from Adam should be total catch by fleet accounting for both tickets and catch accounting data
+# But, to get a somewhat realistic F, we'd need to ensure that this captures global catch to satisfation
+# do some vieweing and compare to:
+# 1. stock assessment catch reconstructions
+# 2. catch time series we did
+
+# We will need to turn these into F's. If they are in line with the catch.ts data and/or the stock assessment catch reconstruction,
+# we'll need to get best estimates of stock status (we have those) and get F based on catch (remember selex here)
+# how do we parameterize selectivity for these?
+
+# Adam recommends that the evaluation of F is done with data after 2008
 # read in time series
 
 # Atlantis groups for column names
@@ -258,65 +362,3 @@ comp %>%
 # overall, it likely does not matter so much, because this F will require calibration anyway, until it yields catch that is in the ballpark of the catch for the desired period
 # my catch reconstruction only goes to 2020
 # 
-
-# Spatial analysis --------------------------------------------------------
-
-# map catches in space for the top key fleets
-# make a summary table for the fleets, ordered by recent catch
-fleets_spatial <- fleets %>%
-  filter(year > 2015) %>%
-  group_by(year, fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, box_id) %>%
-  summarize(catch_mt = sum(weight_mton)) %>%
-  group_by(fleet, Primary.Spp, Gear, Fishing.Area, Landing.Area, box_id) %>%
-  summarize(catch_mt = mean(catch_mt)) %>%
-  ungroup()
-
-# make it spatial
-fleets_spatial <- goa_sf %>%
-  select(box_id) %>%
-  left_join(fleets_spatial, by = "box_id")
-
-for(i in 1:length(fleet_names)){
-  
-  # pick out a fleet
-  this_fleet_name <- fleet_names[i]
-  
-  # filter df to that fleet
-  this_fleet <- fleets_spatial %>%
-    filter(fleet == this_fleet_name)
-  
-  # define gear, target, fishing area, landing area
-  this_target <- this_fleet %>% pull(Primary.Spp) %>% unique()
-  this_gear <- this_fleet %>% pull(Gear) %>% unique()
-  this_fishing_area <- this_fleet %>% pull(Fishing.Area) %>% unique()
-  this_landing_area <- this_fleet %>% pull(Landing.Area) %>% unique()
-  
-  area_chart_by_fleet <-  ggplot()+
-    geom_sf(data = this_fleet, aes(fill = catch_mt))+
-    geom_sf(data = coast_sf)+
-    scale_fill_viridis()+
-    theme_bw()+
-    labs(title = paste0("Target = ", this_target, "\n",
-                        "Gear = ", this_gear, "\n",
-                        "Fishing area = ", this_fishing_area, "\n",
-                        "Landing area = ", this_landing_area))
-  
-  # save plot
-  ggsave(paste0("fleets/maps_by_fleet_recent_catch/", this_fleet_name, ".png"), area_chart_by_fleet, width = 8, height = 4)
-  
-}
-
-# plot
-fleets_spatial %>%
-  filter(fleet %in% (fleets_summary %>% slice_head(n = 4) %>% pull(fleet))) %>%
-  ggplot()+
-  geom_sf(fill = catch_mt) %>%
-  scale_fill_viridis()+
-  theme_bw()+
-  labs(title = paste0("Target = ", this_target, "\n",
-                      "Gear = ", this_gear, "\n",
-                      "Fishing area = ", this_fishing_area, "\n",
-                      "Landing area = ", this_landing_area))
-  
-
-
