@@ -74,6 +74,15 @@ selex <- read.csv("data/age_at_selex_new.csv")
 #   mutate(Time = 1990)
 
 # Stock assessment output -------------------------------------------------
+# UPDATE 04/05/2024
+# Data streams from the most recent assessments are avaialble from https://apps-st.fisheries.noaa.gov/stocksmart?app=download-data
+# Note, that the models used to produce these are different from the models we extracted LH info from to build the model
+# Meaning, if we use these time series, they may not be representative of the "same" stocks
+# However, if the purpose is to rescale 1990 Atlantis biomass based on relative changes in the assessment, we don't care about age classes. 
+# Of course, the higher the lowest age in the assessment, the less precise this is. 
+# It also always rests on the assumption that proportions among age classes are the same over time
+
+
 # rework the assessment data frame
 # long format, assign species to Codes, add up biomasses (where possible)
 # express all biomasses as relative to 1990
@@ -321,5 +330,37 @@ catch_biom <- fleets %>%
 catch_biom <- catch_biom %>%
   mutate(mu = weight_mton/mt_dyn)
 
+# get F / mFC:
+# annual_mu = mean_catch / biomass_mt, # exploitation rate
+# annual_F = (-1 * log(1-annual_mu)), # F
+# mFC = 1-exp(-annual_F / 365)
+catch_biom <- catch_biom %>%
+  mutate(annual_F = (-1 * log(1-mu)),
+         mFC = 1-exp(-annual_F / 365))
 
-# get F / mFC
+# how is F looking over time across fleets (last few years? For example for Cod?)
+f_dyn <- catch_biom %>%
+  group_by(year, spp) %>%
+  summarize(f = sum(annual_F))
+
+f_dyn %>%
+  ggplot(aes(x = year, y = f))+
+  geom_line()+
+  geom_point()+
+  theme_bw()+
+  facet_wrap(~spp, scales = "free")
+
+# get terminal F/mFC
+
+
+# Relationships between F and catch ---------------------------------------
+
+# We do not have biomass estimates for most functional groups
+# In those cases, calculate the proportion of catch by fleet and apply that to the background F
+# Before doing so, check that proportion of F and proportion of catch are equal for groundfish
+
+
+
+# If this holds, I am starting to think that a far better approach would be:
+# Pull F from Stock SMART
+# Get proportion of catch by fleet from Adam's work
