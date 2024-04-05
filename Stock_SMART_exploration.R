@@ -12,12 +12,6 @@ library(readxl)
 
 # Read in data ------------------------------------------------------------
 
-# read in RDS object from Adam
-# read fleets and fleet keys
-fleets <- readRDS("fleets/fleet_total_catch_atl.RDS")
-fleet_key <- read.csv("fleets/fleet_Atlantis.csv")
-grps <- read.csv("data/GOA_Groups.csv")
-
 # read in time series from Stock SMART
 biom_ss <- read_excel("data/Assessment_TimeSeries_Data_SMART.xlsx", sheet  = 1, range = "A1:CL72", col_names = F)
 
