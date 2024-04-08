@@ -48,7 +48,8 @@ fleets_prop <- fleets_tot %>%
 fleets_prop_term <- fleets_prop %>%
   filter(year >= 2015, year <= 2020) %>%
   group_by(spp, fleet) %>%
-  summarise(prop = mean(prop, na.rm = T))
+  summarise(prop = mean(prop, na.rm = T)) %>%
+  ungroup()
 
 # check
 # check <- fleets_prop_term %>%
@@ -78,3 +79,112 @@ goa_fleets_file <- paste0(file_path, "GOA_fisheries.csv")
 # read in
 bg_harvest <- readLines(bg_harvest_file)
 goa_fisheries <- read.csv(goa_fleets_file)
+
+# fix typo
+goa_fisheries$Code <- gsub("CgOthSpiKo", "CgOthSpiKi", goa_fisheries$Code)
+
+# get codes, and rewrite fleet codes to match format
+fg_codes <- unique(fleets_prop_term$spp)
+fleet_codes_csv <- goa_fisheries %>% pull(Code)
+fleet_codes <- fleets_prop_term %>% select(fleet) %>% distinct()
+
+rewrite_codes <- function(original_string){
+  # Split the string into words based on '_'
+  words <- unlist(strsplit(original_string, "_"))
+  
+  # Convert each word to Title Case
+  title_case_words <- sapply(words, function(word) {
+    paste0(toupper(substr(word, 1, 1)), tolower(substr(word, 2, nchar(word))))
+  })
+  
+  # Concatenate the words back together
+  final_string <- paste0(title_case_words, collapse = "")
+  
+  return(final_string)
+}
+
+fleet_codes <- fleet_codes %>% 
+  rowwise() %>%
+  mutate(fleet_key = rewrite_codes(as.character(fleet))) %>%
+  ungroup()
+
+for(i in 1:length(fg_codes)) {
+  
+  grp <- fg_codes[i]
+  idx <- grep(paste0('mFC_', grp, ' 33'), bg_harvest)
+  
+  parname <- bg_harvest[idx]
+  parvals <- bg_harvest[idx + 1] %>% 
+    strsplit(' ') %>% 
+    unlist() %>% 
+    as.numeric() %>% 
+    matrix(nrow=1) %>%
+    data.frame() %>%
+    select_if(~ !any(is.na(.))) %>%
+    set_names(fleet_codes_csv)
+  
+  # bg mfc
+  bg_mfc <- parvals[1,1]
+  
+  # get modifiers by fleet
+  scalars <- fleets_prop_term %>%
+    filter(spp == grp) %>%
+    select(-spp)
+  
+  # replace line in prm file
+  parvals_long <- parvals %>%
+    pivot_longer(everything(), names_to = "fleet_key", values_to = "mFC") %>%
+    left_join(fleet_codes) %>%
+    left_join(scalars, by = "fleet") %>%
+    distinct() %>%
+    mutate(prop = replace_na(prop, 0)) %>%
+    rowwise() %>%
+    mutate(mFC_new = bg_mfc * prop) %>%
+    ungroup()
+  
+  # check
+  check <- (parvals_long %>% pull(mFC_new) %>% sum()) - bg_mfc
+  if(check != 0){
+    print(paste(grp, ": new mFC - original mFC =", check))
+  }
+  
+  # new mFC vector
+  new_parvals <- parvals_long %>% pull(mFC_new) %>% paste(collapse = " ")
+  
+  # replace the string in the prm
+  bg_harvest[idx + 1] <- new_parvals
+  
+}
+
+# throughout, fix typo
+bg_harvest <- gsub("CgOthSpiKo", "CgOthSpiKi", bg_harvest)
+
+
+# Changing other parameters -----------------------------------------------
+# Other parameters to change are:
+# mFC_startage
+# for now, set them all to the value of the background, then we will need fleet-specific selex
+for(i in 1:length(fg_codes)) {
+  
+  grp <- fg_codes[i]
+  idx <- grep(paste0(grp, '_mFC_startage 33'), bg_harvest)
+  
+  parname <- bg_harvest[idx]
+  parvals <- bg_harvest[idx + 1] %>% 
+    strsplit(' ') %>% 
+    unlist() %>% 
+    as.numeric()
+  
+  # bg mfc_startage
+  bg_mfc_startage <- parvals[1]
+  
+  # new mFC vector
+  new_parvals <- rep(bg_mfc_startage, length(fleet_codes_csv)) %>% paste(collapse = " ")
+  
+  # replace the string in the prm
+  bg_harvest[idx + 1] <- new_parvals
+  
+}
+
+# write out the new prm
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets.prm")
