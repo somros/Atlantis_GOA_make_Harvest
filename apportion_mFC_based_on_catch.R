@@ -162,7 +162,35 @@ bg_harvest <- gsub("CgOthSpiKo", "CgOthSpiKi", bg_harvest)
 
 # Changing other parameters -----------------------------------------------
 # Other parameters to change are:
-# mFC_startage
+# flagF_XXX
+for(i in 1:length(fg_codes)) {
+  
+  grp <- fg_codes[i]
+  idx <- grep(paste0("flagF_", grp, " 59"), bg_harvest)
+  
+  parname <- bg_harvest[idx]
+  parvals <- bg_harvest[idx + 1] %>% 
+    strsplit(' ') %>% 
+    unlist() %>% 
+    as.numeric()
+  
+  # all fleets can catch some small proportion of a species
+  # open all of them, and let mFC determine how much of a species is caught
+  # but, close the first two (bg and imposed catch), to minimize unintended behavior
+  # if mFC is 0, catch will be 0
+
+  # new flagF vector
+  new_parvals <- c(0, 0, rep(1, (length(fleet_codes_csv)-2))) %>% paste(collapse = " ")
+  
+  # replace the string in the prm
+  bg_harvest[idx + 1] <- new_parvals
+  
+  # also fix typo in the parmaeter name
+  bg_harvest[idx] <- paste0("flagF_", grp, " 33")
+  
+}
+
+# XXX_mFC_startage
 # for now, set them all to the value of the background, then we will need fleet-specific selex
 for(i in 1:length(fg_codes)) {
   
@@ -178,7 +206,7 @@ for(i in 1:length(fg_codes)) {
   # bg mfc_startage
   bg_mfc_startage <- parvals[1]
   
-  # new mFC vector
+  # new mFC_startage vector
   new_parvals <- rep(bg_mfc_startage, length(fleet_codes_csv)) %>% paste(collapse = " ")
   
   # replace the string in the prm
