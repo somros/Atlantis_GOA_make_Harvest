@@ -369,3 +369,55 @@ comp %>%
 # overall, it likely does not matter so much, because this F will require calibration anyway, until it yields catch that is in the ballpark of the catch for the desired period
 # my catch reconstruction only goes to 2020
 # 
+
+# Main fleets by species --------------------------------------------------
+# Here we look at one species at a time and see what fleets contribute to the catch
+# this is going to help us set selectivity
+# Selectivity depends on a few axes but we can simplify that in terms of gear
+verts <- grps %>% filter(GroupType %in% c("FISH","SHARK","MAMMAL","SEABIRD")) %>% pull(LongName)
+catch_by_gear <- fleets %>%
+  filter(year > 2015, LongName %in% verts) %>%
+  group_by(year, fleet, Gear, LongName) %>%
+  summarise(weight_mton = sum(weight_mton)) %>% # aggregate in space
+  group_by(fleet, Gear, LongName) %>%
+  summarise(weight_mton = mean(weight_mton)) #%>% # mean of recent years
+  # group_by(LongName) %>%
+  # mutate(tot_weight = sum(weight_mton)) %>%
+  # ungroup() %>%
+  # mutate(prop = weight_mton / tot_weight)
+
+# produce a table with proportional catch by gear
+prop_by_gear <- catch_by_gear %>%
+  group_by(LongName, Gear) %>%
+  summarise(weight_mton = sum(weight_mton)) %>%
+  group_by(LongName) %>%
+  mutate(tot = sum(weight_mton)) %>%
+  ungroup() %>%
+  mutate(prop = round(weight_mton / tot, 3)) %>%
+  filter(prop > 0) %>%
+  arrange(LongName, desc(prop)) %>%
+  select(LongName, Gear, prop)
+write.csv(prop_by_gear, "fleets/proportion_of_catch_by_gear.csv", row.names = F)
+
+  
+# plot, including fleet information as selex is set by fleet in the harvest.prm
+all_sp <- fleets_by_species %>%
+  filter(LongName %in% verts) %>%
+  pull(LongName) %>%
+  unique()
+
+for(i in 1:length(all_sp)){
+  
+  this_sp <- all_sp[i]
+  
+  p <- catch_by_gear %>%
+    filter(LongName == this_sp) %>%
+    ggplot()+
+    geom_bar(aes(x = Gear, y = weight_mton, fill = fleet), stat = "identity", position = "stack")+
+    theme_bw()+
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 1)) # Rotates x-axis labels
+   
+  ggsave(paste0("fleets/catch_by_gear/", this_sp, ".png"), p, width = 6, height = 6)
+    
+}  
+  
