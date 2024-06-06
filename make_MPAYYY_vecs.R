@@ -157,7 +157,7 @@ goa_fisheries$Code <- gsub("CgOthSpiKo", "CgOthSpiKi", goa_fisheries$Code)
 fleets_prop_term <- read.csv("data/mFC_prop_by_fleet.csv")
 fg_codes <- unique(fleets_prop_term$spp)
 fleet_codes_csv <- goa_fisheries %>% pull(Code)
-fleet_codes <- fleets_spatial %>% select(fleet) %>% distinct()
+fleet_codes <- fleets_spatial %>% dplyr::select(fleet) %>% distinct()
 
 rewrite_codes <- function(original_string){
   # Split the string into words based on '_'
@@ -180,6 +180,8 @@ fleets_spatial <- fleets_spatial %>%
   ungroup()
 
 fleet_codes <- unique(fleets_spatial$fleet_code)
+fleet_codes <- c(fleet_codes, "Canada")
+
 for(i in 1:length(fleet_codes)){
   this_f <- fleet_codes[i]
   this_df <- fleets_spatial %>% filter(fleet_code == this_f)
@@ -211,10 +213,16 @@ this_vec <- c(rep(0,92), rep(1, (109-92))) %>%
   paste(collapse = " ")
 
 bg_harvest[idx + 1] <- this_vec
+
 # other relevant parameters:
 idx <- grep('Canada_flagmpa', bg_harvest)
 lab <- gsub("^.*?(##)", "\\1", bg_harvest[idx])
 bg_harvest[idx] <- paste0(this_f, "_flagmpa 1", " ", lab)
+
+# general parameter flagmpa
+idx <- grep('\\bflagmpa', bg_harvest)
+lab <- gsub("^.*?(##)", "\\1", bg_harvest[idx])
+bg_harvest[idx] <- paste0("flagmpa 1", " ", lab)
 
 # write out
 writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_v2.prm")
@@ -229,8 +237,14 @@ for(i in 1:length(fleet_codes)){
   this_f <- fleet_codes[i]
   idx <- grep(paste0('MPA', this_f, ' 109'), bg_harvest)
   
-  # make a vector of 1 for each box
-  this_vec <- rep(1, 109) %>%
+  # make a vector 
+  if(this_f != "Canada"){
+    this_vec <- c(rep(1,92), rep(0, (109-92)))
+  } else {
+    this_vec <- c(rep(0,92), rep(1, (109-92)))
+  }
+  
+  this_vec <- this_vec %>%
     as.character() %>%
     paste(collapse = " ")
   
@@ -238,4 +252,4 @@ for(i in 1:length(fleet_codes)){
   
 }
 
-writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_check.prm")
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_check_v2.prm")
