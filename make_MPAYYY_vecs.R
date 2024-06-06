@@ -143,7 +143,7 @@ for(f in 1:length(all_fleets)){
 # now produce vectors
 # start from a prm we have
 file_path <- "data/"
-bg_harvest_file <- paste0(file_path, "GOA_harvest_fleets.prm")
+bg_harvest_file <- paste0(file_path, "GOA_harvest_fleets_v2.prm")
 goa_fleets_file <- paste0(file_path, "GOA_fisheries.csv")
 
 # read in
@@ -154,6 +154,7 @@ goa_fisheries <- read.csv(goa_fleets_file)
 goa_fisheries$Code <- gsub("CgOthSpiKo", "CgOthSpiKi", goa_fisheries$Code)
 
 # get codes, and rewrite fleet codes to match format
+fleets_prop_term <- read.csv("data/mFC_prop_by_fleet.csv")
 fg_codes <- unique(fleets_prop_term$spp)
 fleet_codes_csv <- goa_fisheries %>% pull(Code)
 fleet_codes <- fleets_spatial %>% select(fleet) %>% distinct()
@@ -199,15 +200,42 @@ for(i in 1:length(fleet_codes)){
   
 }
 
+# make a vector for Canada
+# assume that, within Canada, all boxes are open
+idx <- grep('MPACanada 109', bg_harvest)
+
+# turn numbers to 0-1
+# make a vector of 1 for each box in Canada (boxes 93 and up)
+this_vec <- c(rep(0,92), rep(1, (109-92))) %>%
+  as.character() %>%
+  paste(collapse = " ")
+
+bg_harvest[idx + 1] <- this_vec
 # other relevant parameters:
-# flagmpa = 1
-# YYY_flagmpa = 1 # this option is fix MPA
-# flaginfringe = 0
-# flagSimpleStartStopMPA = 0 # this is to start MPA later
-# there are lots of other options but they all sound ancillary
-idx <- grep('\\bflagmpa', bg_harvest)
+idx <- grep('Canada_flagmpa', bg_harvest)
 lab <- gsub("^.*?(##)", "\\1", bg_harvest[idx])
-bg_harvest[idx] <- paste0("flagmpa 1", " ", lab)
+bg_harvest[idx] <- paste0(this_f, "_flagmpa 1", " ", lab)
 
 # write out
-writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa.prm")
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_v2.prm")
+
+# Make a dummy MPA harvest file where the MPA vectors are all 1 -----------
+# This has the purpose of testing if the MPA machinery works in Atlantis
+
+# read in
+bg_harvest <- readLines("data/GOA_harvest_fleets_mpa_v2.prm")
+
+for(i in 1:length(fleet_codes)){
+  this_f <- fleet_codes[i]
+  idx <- grep(paste0('MPA', this_f, ' 109'), bg_harvest)
+  
+  # make a vector of 1 for each box
+  this_vec <- rep(1, 109) %>%
+    as.character() %>%
+    paste(collapse = " ")
+  
+  bg_harvest[idx + 1] <- this_vec
+  
+}
+
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_check.prm")

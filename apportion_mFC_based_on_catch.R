@@ -64,7 +64,7 @@ fleets_prop_term %>%
   theme_bw()
 
 # write this out
-write.csv(fleets_prop_term, "data/mFC_prop_by_fleet.csv", row.names = F)
+# write.csv(fleets_prop_term, "data/mFC_prop_by_fleet.csv", row.names = F)
 
 # Apply to background mFC -------------------------------------------------
 
@@ -86,7 +86,7 @@ goa_fisheries$Code <- gsub("CgOthSpiKo", "CgOthSpiKi", goa_fisheries$Code)
 # get codes, and rewrite fleet codes to match format
 fg_codes <- unique(fleets_prop_term$spp)
 fleet_codes_csv <- goa_fisheries %>% pull(Code)
-fleet_codes <- fleets_prop_term %>% select(fleet) %>% distinct()
+fleet_codes <- fleets_prop_term %>% dplyr::select(fleet) %>% distinct()
 
 rewrite_codes <- function(original_string){
   # Split the string into words based on '_'
@@ -107,6 +107,12 @@ fleet_codes <- fleet_codes %>%
   rowwise() %>%
   mutate(fleet_key = rewrite_codes(as.character(fleet))) %>%
   ungroup()
+
+# Add Canada fleet
+# For now we are keeping that to mFC
+# No other fleets catch in Canada and Canada fleet does not catch anywhere else so this should be fine
+fleet_codes <- rbind(fleet_codes,
+                     data.frame("fleet" = "Canada", "fleet_key" = "Canada"))
 
 for(i in 1:length(fg_codes)) {
   
@@ -129,7 +135,10 @@ for(i in 1:length(fg_codes)) {
   # get modifiers by fleet
   scalars <- fleets_prop_term %>%
     filter(spp == grp) %>%
-    select(-spp)
+    dplyr::select(-spp)
+  
+  # add Canada
+  scalars <- rbind(scalars, data.frame("fleet" = "Canada", prop = 1))
   
   # replace line in prm file
   parvals_long <- parvals %>%
@@ -143,7 +152,7 @@ for(i in 1:length(fg_codes)) {
     ungroup()
   
   # check
-  check <- (parvals_long %>% pull(mFC_new) %>% sum()) - bg_mfc
+  check <- (parvals_long %>% pull(mFC_new) %>% sum()) - 2 * bg_mfc # this is 2*mFC because mFC for BC stays the same
   if(check != 0){
     print(paste(grp, ": new mFC - original mFC =", check))
   }
@@ -158,7 +167,6 @@ for(i in 1:length(fg_codes)) {
 
 # throughout, fix typo
 bg_harvest <- gsub("CgOthSpiKo", "CgOthSpiKi", bg_harvest)
-
 
 # Changing other parameters -----------------------------------------------
 # Other parameters to change are:
@@ -215,4 +223,4 @@ for(i in 1:length(fg_codes)) {
 }
 
 # write out the new prm
-writeLines(bg_harvest, con = "data/GOA_harvest_fleets.prm")
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets_v2.prm")
