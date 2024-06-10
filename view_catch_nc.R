@@ -21,8 +21,8 @@ select <- dplyr::select
 catch_nc_file_base <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1517/outputGOA01517_testCATCH.nc"
 bio_nc_file_base <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1517/outputGOA01517_test.nc"
 # mpa
-catch_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1553/outputGOA01553_testCATCH.nc"
-bio_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1553/outputGOA01553_test.nc"
+catch_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1559/outputGOA01559_testCATCH.nc"
+bio_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1559/outputGOA01559_test.nc"
 # groups
 grps <- read.csv("data/GOA_Groups.csv")
 all_fg <- grps %>% filter(GroupType %in% c("FISH", "SHARK")) %>% pull(Name)
@@ -38,7 +38,7 @@ fleet_key <- read.csv("data/GOA_fisheries.csv")
 # process fishery data
 
 # load function to extract catch from netcdf
-source("build_catch_output.R")
+source("read_catch_nc_functions.R")
 
 # Compare between Atlantis runs -------------------------------------------
 # Use v2
@@ -51,32 +51,44 @@ catch_nc_base <- build_catch_output_v2(catch_nc = catch_nc_file_base,
 catch_nc_mpa <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                    fleet_struc = F,
                                    relative = T,
-                                   run = 1555,
+                                   run = 1559,
                                    key = fleet_key)
 
 # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
 catch_diff <- catch_nc_base %>%
-  left_join(catch_nc_mpa %>% st_set_geometry(NULL), by = c("box_id", "Name")) %>%
-  mutate(residual_mt = mt_tot.x - mt_tot.y,
+  left_join(catch_nc_mpa, by = c("ts", "box_id", "Name")) %>%
+  mutate(residual_mt = mt.x - mt.y,
          residual_prop = prop.x - prop.y)
+
+# add space
+catch_diff <- goa_sf %>%
+  select(box_id) %>%
+  left_join(catch_diff, by = "box_id")
   
 # view
 catch_diff %>%
-  filter(Name == "Pollock") %>%
+  filter(ts == max(ts)) %>%
   ggplot()+
-  geom_sf(aes(fill = residual_prop))+
+  geom_sf(aes(fill = residual_mt))+
   scale_fill_viridis()+
   theme_bw()+
   facet_wrap(~Name)
 
-# These plots are difficult to interpret
+# other view
+catch_diff %>%
+  filter(ts == max(ts)) %>%
+  ggplot(aes(x = mt.x, y = mt.y, color = box_id))+
+  geom_point()+
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")+  # Add 1:1 line
+  facet_wrap(~Name, scales = "free")
 
 # Compare between Atlantis run and data -----------------------------------
+# This only makes sense either in relative terms or when the model operates under realistic F
 
-catch_atlantis <- build_catch_output_v2(catch_nc = catch_nc_file_base, 
+catch_atlantis <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                       fleet_struc = F,
                                       relative = T,
-                                      run = 1517,
+                                      run = 1559,
                                       key = fleet_key)
 
 # average of end of the run
@@ -84,12 +96,18 @@ catch_atlantis_end <- catch_atlantis %>%
   filter(ts > (max(ts)-5)) %>%
   group_by(box_id, Name) %>%
   summarize(mt = mean(mt)) %>%
-  ungroup()
+  ungroup() %>%
+  group_by(Name) %>%
+  mutate(tot_mt = sum(mt)) %>%
+  ungroup() %>%
+  mutate(prop = mt / tot_mt)
 
-# first no fleets
+# start wih no fleets here - space only
 catch_data <- fleets %>%
+  ungroup() %>%
   left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
   select(year, box_id, Name, fleet, weight_mton) %>%
+  mutate(weight_mton = replace_na(weight_mton, 0)) %>%
   group_by(year, box_id, Name) %>%
   summarise(mt = sum(weight_mton)) %>% # sum up across fleets
   ungroup() %>%
@@ -98,25 +116,60 @@ catch_data <- fleets %>%
   summarize(mt = mean(mt)) %>%
   ungroup()
 
+# add missing combinations
+dummy_df <- expand.grid("box_id" = 0:108, "Name" = unique(catch_data$Name))
+catch_data <- catch_data %>%
+  full_join(dummy_df) %>%
+  mutate(mt = replace_na(mt, 0))
+
+# zero-out BBs
+bboxes <- goa_sf %>% filter(boundary == TRUE) %>% pull(box_id)
+catch_data <- catch_data %>%
+  rowwise() %>%
+  mutate(mt = ifelse(box_id %in% bboxes,0,mt))
+
+# get relative catch
+catch_data <- catch_data %>%
+  group_by(Name) %>%
+  mutate(tot_mt = sum(mt, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(prop = mt / tot_mt)
+
 # check differences
 catch_diff <- catch_data %>%
-  left_join(catch_atlantis_end, by = c("box_id", "Name")) %>%
-  mutate(residual = mt.x - mt.y) # observed - predicted
+  left_join(catch_atlantis_end, by = c("box_id", "Name"))# %>%
+  # mutate(residual = mt.x - mt.y,
+  #        ratio = mt.x / mt.y) # observed - predicted
+
+# view
+catch_diff <- catch_diff %>%
+  select(box_id, Name, prop.x, prop.y) %>%
+  rename(data = prop.x, model = prop.y) %>%
+  pivot_longer(-c(box_id, Name), names_to = "Type", values_to = "Prop")
 
 # add space
 catch_diff <- goa_sf %>%
-  select(box_id) %>%
+  select(box_id, boundary) %>%
   left_join(catch_diff, by = "box_id")
 
-# view
-# do only verts
-catch_diff %>%
-  filter(Name %in% all_fg) %>%
-  ggplot()+
-  geom_sf(aes(fill = residual))+
-  scale_fill_viridis()+
-  theme_bw()+
-  facet_wrap(~Name)
+for(i in 1:length(all_fg)){
+  this_fg <- all_fg[i]
+  
+  if(this_fg %in% unique(catch_diff$Name)){
+    print(paste("doing", this_fg))
+    
+    p <- catch_diff %>%
+      filter(Name == this_fg) %>%
+      ggplot()+
+      geom_sf(aes(fill = Prop))+
+      scale_fill_viridis()+
+      theme_bw()+
+      facet_grid(Name~Type)
+    
+    ggsave(paste0("fleets/data_vs_catch/", this_fg, ".png"), p, width = 9, height = 4)
+  }
+  
+}
 
 # TODO: move this forward - need to add 0 boxes to the data, reassign island catches (check bc we have done it)
 # Now it will be way out of sorts, but the final goal WHEN WE WORK WITH REAL F's will be to:
@@ -124,3 +177,12 @@ catch_diff %>%
 # 2. Get a scalar of the ratio between what is caught and what should be caught
 # 3. Rescale MPAYYY entries so that they force more / less catch
 # I find this a better hack (in theory) than modifying mFC - thogh I am sure in practice it won't be as easy
+
+
+# Look at catch by fleet --------------------------------------------------
+
+catch_atlantis_fleets <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
+                                        fleet_struc = T,
+                                        relative = T,
+                                        run = 1559,
+                                        key = fleet_key)

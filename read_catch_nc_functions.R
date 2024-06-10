@@ -239,12 +239,6 @@ build_catch_output <- function(catch_nc, bio_nc, age_struc, relative, run){
 # compare the output of the two
 build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, key){
   
-  catch_nc = catch_nc_file_mpa
-  fleet_struc = F
-  relative = F
-  run = 1555
-  key = fleet_key
-  
   # catch
   this_tidync <- tidync(catch_nc)
   this_nc <- ncdf4::nc_open(catch_nc)
