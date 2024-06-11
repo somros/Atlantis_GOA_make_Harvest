@@ -422,7 +422,7 @@ catch_diff <- catch_nc_base %>%
   rename(base = mt_goa.x, mpa = mt_goa.y) 
 
 # for plotting
-catch_diff_long %>%
+catch_diff_long <- catch_diff %>%
   pivot_longer(-c(ts,Name), names_to = "run", values_to = "mt")
   
 # view
@@ -437,7 +437,13 @@ catch_diff_long %>%
 # for most groups it is fairly apparent already at the start of the run that the fishery can't hit the non-spatial quota
 # So in the interest of ironing out the big kinks fast, let's do some bried (1-2 years) runs
 
-# for ease of visualization, have a 
+# for ease of visualization, add a plot for the first time step only (you will need it when you have 1-yr long runs)
+catch_diff_long %>%
+  filter(Name %in% all_fg) %>%
+  filter(ts == 1) %>%
+  ggplot()+
+  geom_bar(aes(x = run, y = mt), stat = "identity")+
+  facet_wrap(~Name, scales = "free")
 
 # Get mFC scalars and apply them to the harvest.nc file -------------------
 
