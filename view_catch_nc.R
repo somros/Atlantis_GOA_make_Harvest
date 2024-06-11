@@ -44,6 +44,7 @@ fleets <- fleets %>%
 source("read_catch_nc_functions.R")
 
 # Compare between Atlantis runs -------------------------------------------
+# This is to compare the catch in space between two Atlantis runs
 # Use v2
 catch_nc_base <- build_catch_output_v2(catch_nc = catch_nc_file_base, 
                                        fleet_struc = F,
@@ -84,6 +85,11 @@ catch_diff %>%
   geom_point()+
   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")+  # Add 1:1 line
   facet_wrap(~Name, scales = "free")
+
+# This step shows you the difference between the normal mFC Atlantis run and the run with the new MPA setup
+# This offers some interesting avenues for calibration
+# For example, one could derive box-specific indices of the catch ratio between base and MPA runs
+# Problem here is that the MPAYYY vectors are fleet-specific, not species-specific
 
 # Compare between Atlantis run and data -----------------------------------
 # This only makes sense either in relative terms or when the model operates under realistic F
@@ -175,24 +181,24 @@ for(i in 1:length(all_fg)){
 # I find this a better hack (in theory) than modifying mFC - thogh I am sure in practice it won't be as easy
 
 
-# Look at catch by fleet --------------------------------------------------
+# Fleet makeup of a species' catch --------------------------------------------------
 # Check that catch split by fleet is similar to the data
 # Because the data is only for AK, drop BC from the catch
 
-catch_atlantis_fleets <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
+catch_atlantis_species <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                                fleet_struc = T,
                                                relative = T,
                                                run = 1559,
                                                key = fleet_key)
 
 # average of end of the run
-catch_atlantis_fleets_end <- catch_atlantis_fleets %>%
+catch_atlantis_species_end <- catch_atlantis_species %>%
   filter(ts > (max(ts)-5)) %>%
   filter(box_id < 92) %>% # keep AK only
   group_by(fleet, Name) %>%
   summarize(mt = mean(mt)) %>%
   ungroup() %>%
-  group_by(Name) %>%
+  group_by(Name) %>% # group by species
   mutate(tot_mt = sum(mt)) %>%
   ungroup() %>%
   mutate(prop = mt / tot_mt)
@@ -247,13 +253,13 @@ catch_data <- catch_data %>%
 
 # stack
 catch_data <- catch_data %>% mutate(Type = "data")
-catch_atlantis_fleets_end <- catch_atlantis_fleets_end %>% mutate(Type = "model")
-catch_diff <- rbind(catch_data, catch_atlantis_fleets_end)
+catch_atlantis_species_end <- catch_atlantis_species_end %>% mutate(Type = "model")
+catch_diff <- rbind(catch_data, catch_atlantis_species_end)
 catch_diff <- catch_diff %>%
   left_join(fleet_key %>% select(Code, Name), by = c("fleet" = "Code"))
 
 # view
-# drop empty fleets and background F
+# drop empty fleets and background F, we do not need to plot those
 to_drop <- c("Canada",
              "background",
              unique(catch_diff$fleet)[grepl("dummy", unique(catch_diff$fleet))])
@@ -276,7 +282,7 @@ for(i in 1:length(all_fg)){
       theme_bw()+
       facet_wrap(~Name.x)
     
-    ggsave(paste0("fleets/data_vs_catch/by_fleet/", this_fg, ".png"), p, width = 8, height = 4)
+    ggsave(paste0("fleets/data_vs_catch/by_species/", this_fg, ".png"), p, width = 8, height = 4.5)
     
   }
   
@@ -284,4 +290,190 @@ for(i in 1:length(all_fg)){
 
 # the proportion of total catch by fleet works well
 # Though this is the easy part - you may have a species that is barely caught at all being caught in the right proportions by different fleets
+# Something that may be informative in that sense is the species makeup of the catch from a fleet, in relative terms
+# I.e., looking at fleet Y, how does the species composition of the catch change?
 
+
+# Species makeup of a fleet's catch ----------------------------------------
+# simlar approach to above
+# TODO: these should all become functions for easy deployment every time you have a new run to look at
+# Also need to find a way to version the plots
+
+# average of end of the run
+catch_atlantis_fleets_end <- catch_atlantis_species %>%
+  filter(ts > (max(ts)-5)) %>%
+  filter(box_id < 92) %>% # keep AK only
+  group_by(fleet, Name) %>%
+  summarize(mt = mean(mt)) %>%
+  ungroup() %>%
+  group_by(fleet) %>% # group by fleets
+  mutate(tot_mt = sum(mt)) %>%
+  ungroup() %>%
+  mutate(prop = mt / tot_mt)
+
+# no space - fleets only
+catch_data <- fleets %>%
+  ungroup() %>%
+  left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+  select(year, box_id, Name, fleet, weight_mton) %>%
+  mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+  group_by(year, fleet, Name) %>%
+  summarise(mt = sum(weight_mton)) %>% # sum up across boxes
+  ungroup() %>%
+  filter(year > (max(year)-5)) %>%
+  group_by(fleet, Name) %>%
+  summarize(mt = mean(mt)) %>%
+  ungroup()
+
+# add missing combinations
+dummy_df <- expand.grid("fleet" = unique(catch_data$fleet), "Name" = unique(catch_data$Name))
+catch_data <- catch_data %>%
+  full_join(dummy_df) %>%
+  mutate(mt = replace_na(mt, 0))
+
+# get relative catch
+catch_data <- catch_data %>%
+  group_by(fleet) %>%
+  mutate(tot_mt = sum(mt, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(prop = mt / tot_mt)
+
+# deal with codes for the fleets being different
+catch_data <- catch_data %>% 
+  rowwise() %>%
+  mutate(fleet = rewrite_codes(as.character(fleet))) %>%
+  ungroup()
+
+# stack
+catch_data <- catch_data %>% mutate(Type = "data")
+catch_atlantis_fleets_end <- catch_atlantis_fleets_end %>% mutate(Type = "model")
+catch_diff <- rbind(catch_data, catch_atlantis_fleets_end)
+catch_diff <- catch_diff %>%
+  left_join(fleet_key %>% select(Code, Name), by = c("fleet" = "Code"))
+
+# view
+# drop empty fleets and background F
+to_drop <- c("Canada",
+             "background",
+             unique(catch_diff$fleet)[grepl("dummy", unique(catch_diff$fleet))])
+to_keep <- setdiff(unique(catch_diff$fleet), to_drop)
+
+# make a plot per species
+for(i in 1:length(to_keep)){
+  this_fleet <- to_keep[i]
+    
+    print(paste("Doing", this_fleet))
+    
+    p <- catch_diff %>%
+      filter(fleet == this_fleet) %>%
+      filter(Name.x %in% all_fg) %>% # do vertebrates only
+      filter(prop > 0) %>%
+      ggplot(aes(x = Type, y = prop, fill = Name.x))+
+      geom_bar(stat = "identity", position = "stack")+
+      theme_bw()+
+      facet_wrap(~Name.y)
+    
+    ggsave(paste0("fleets/data_vs_catch/by_fleet/", this_fleet, ".png"), p, width = 8, height = 4.5)
+
+  
+}
+
+# Most fleets look somewhat similar to the data in their catch compositions, but there are some clear problems
+# of availability.
+# A great example is pollock. 99% of it is caught by a trawl fleet (same as data). 
+# Looking at this trawl fleet however, we see that in the model it catches much more arrowtooth (or less pollock) than it should
+# So, it this fleet catching more arrowtooth or less pollock? 
+
+# There is a need to calibrate this. A few ways to do it:
+# 1. Manipulate mFC. This gives you control over the species and the fleet, but not over space
+# 2. Manipulate MPAYYY (it takes entries >1). This gives you control over a fleet and the areas, but not the species
+
+# When the spatial element of the setup is what causes it to underharvest, it seems sensible to use approach 2.
+# Problem with that is - you amp up a fleet and you may end up overharvesting some of the species in the fleet to get the main target right
+
+# Perhaps step 1 should be: at model-level, can we catch the same amount of a species that we get in the non-spatial setup?
+# Then we can look at species and fleet makeup and compare it to the data.
+
+# Should we change the proportions of the mFC vector? This would make us drift away from the fleet makeup of the catch of a species, which now is on point
+# So perhaps you shouls start at species level: how far off is the final catch of ATF between the two setup?
+# Apply that scalar to mFC - ACROSS all entries. This way, proportions of catch among fleets will be the same(ish?), but the total catch will be higher.
+# Spatial distribution of catch should not change much (or should it?)
+# Species makeup of each fleet WILL change (for the better or for the worse?)
+
+
+# Compare total catch by species between runs -----------------------------
+catch_nc_base <- build_catch_output_v2(catch_nc = catch_nc_file_base, 
+                                       fleet_struc = F,
+                                       relative = T,
+                                       run = 1517,
+                                       key = fleet_key)
+
+catch_nc_mpa <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
+                                      fleet_struc = F,
+                                      relative = T,
+                                      run = 1559,
+                                      key = fleet_key)
+
+# get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
+catch_diff <- catch_nc_base %>%
+  left_join(catch_nc_mpa, by = c("ts", "box_id", "Name")) %>%
+  select(ts, Name, mt_goa.x, mt_goa.y) %>%
+  distinct() %>%
+  rename(base = mt_goa.x, mpa = mt_goa.y) 
+
+# for plotting
+catch_diff_long %>%
+  pivot_longer(-c(ts,Name), names_to = "run", values_to = "mt")
+  
+# view
+catch_diff_long %>%
+  filter(Name %in% all_fg) %>%
+  ggplot()+
+  geom_line(aes(x = ts, y = mt, color = run))+
+  facet_wrap(~Name, scales = "free")
+
+# One key question here is: How short a run can we get away with?
+# The plot above indicates that, while there can still be some divergence at the end of the run,
+# for most groups it is fairly apparent already at the start of the run that the fishery can't hit the non-spatial quota
+# So in the interest of ironing out the big kinks fast, let's do some bried (1-2 years) runs
+
+# for ease of visualization, have a 
+
+# Get mFC scalars and apply them to the harvest.nc file -------------------
+
+# So, based on the difference in catch between base and mpa setup, work out scalars to crank up mFC in the mpa setup
+# Do so at species level, but know that this will have implications for the species makeup of a fleet's catch
+# Also be mindful that: this may lead to grossly incorrect spatial patterns; and it may have no effect if a fishery fails in a box because its target isn't there
+# Save these scalars because you will need to apply them when you change mFC (e.g. for Ftarg, FMSY, and others)
+# use t=1 as first coarse pass. There will be remaining divergences 
+ scalars <- catch_diff %>%
+  filter(ts == 1) %>%
+  mutate(scalar = base / mpa) %>%
+  select(Name, scalar) %>%
+  left_join(grps %>% select(Name, Code))
+
+# which harvest.prm file do you want to work on
+harvest_old <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1559/GOA_harvest_fleets_mpa_v2.prm"
+harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1559/GOA_harvest_fleets_mpa_v3.prm"
+
+harvest_tab <- readLines(harvest_old)
+
+for(i in 1:nrow(scalars)){
+  
+  this_code <- scalars[i,]$Code
+  this_scalar <- scalars[i,]$scalar
+  
+  # old mFC
+  mfc_old <- harvest_tab[grep(paste0("mFC_", this_code, " 33"), harvest_tab)+1]
+  mfc_old_vec <- as.numeric(unlist(strsplit(mfc_old, " ")))
+  
+  # new vec
+  mfc_new_vec <- mfc_old_vec * this_scalar
+  mfc_new <- paste(as.character(mfc_new_vec), collapse = " ")
+  
+  # replace relevant line
+  harvest_tab[grep(paste0("mFC_", this_code, " 33"), harvest_tab)+1] <- mfc_new
+}
+
+# write out
+writeLines(harvest_tab, con = harvest_new)
