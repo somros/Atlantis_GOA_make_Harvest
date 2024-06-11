@@ -34,8 +34,11 @@ goa_sf <- goa_bgm %>% box_sf()
 # catch reconstruction
 fleets <- readRDS("fleets/fleet_total_catch_atl.RDS")
 fleet_key <- read.csv("data/GOA_fisheries.csv")
-
-# process fishery data
+# zero-out BBs (TODO: thinks if this makes sense)
+bboxes <- goa_sf %>% filter(boundary == TRUE) %>% pull(box_id)
+fleets <- fleets %>%
+  rowwise() %>%
+  mutate(weight_mton = ifelse(box_id %in% bboxes,0,weight_mton))
 
 # load function to extract catch from netcdf
 source("read_catch_nc_functions.R")
@@ -43,16 +46,16 @@ source("read_catch_nc_functions.R")
 # Compare between Atlantis runs -------------------------------------------
 # Use v2
 catch_nc_base <- build_catch_output_v2(catch_nc = catch_nc_file_base, 
-                                    fleet_struc = F,
-                                    relative = T,
-                                    run = 1517,
-                                    key = fleet_key)
+                                       fleet_struc = F,
+                                       relative = T,
+                                       run = 1517,
+                                       key = fleet_key)
 
 catch_nc_mpa <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
-                                   fleet_struc = F,
-                                   relative = T,
-                                   run = 1559,
-                                   key = fleet_key)
+                                      fleet_struc = F,
+                                      relative = T,
+                                      run = 1559,
+                                      key = fleet_key)
 
 # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
 catch_diff <- catch_nc_base %>%
@@ -64,7 +67,7 @@ catch_diff <- catch_nc_base %>%
 catch_diff <- goa_sf %>%
   select(box_id) %>%
   left_join(catch_diff, by = "box_id")
-  
+
 # view
 catch_diff %>%
   filter(ts == max(ts)) %>%
@@ -86,10 +89,10 @@ catch_diff %>%
 # This only makes sense either in relative terms or when the model operates under realistic F
 
 catch_atlantis <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
-                                      fleet_struc = F,
-                                      relative = T,
-                                      run = 1559,
-                                      key = fleet_key)
+                                        fleet_struc = F,
+                                        relative = T,
+                                        run = 1559,
+                                        key = fleet_key)
 
 # average of end of the run
 catch_atlantis_end <- catch_atlantis %>%
@@ -122,12 +125,6 @@ catch_data <- catch_data %>%
   full_join(dummy_df) %>%
   mutate(mt = replace_na(mt, 0))
 
-# zero-out BBs
-bboxes <- goa_sf %>% filter(boundary == TRUE) %>% pull(box_id)
-catch_data <- catch_data %>%
-  rowwise() %>%
-  mutate(mt = ifelse(box_id %in% bboxes,0,mt))
-
 # get relative catch
 catch_data <- catch_data %>%
   group_by(Name) %>%
@@ -138,8 +135,8 @@ catch_data <- catch_data %>%
 # check differences
 catch_diff <- catch_data %>%
   left_join(catch_atlantis_end, by = c("box_id", "Name"))# %>%
-  # mutate(residual = mt.x - mt.y,
-  #        ratio = mt.x / mt.y) # observed - predicted
+# mutate(residual = mt.x - mt.y,
+#        ratio = mt.x / mt.y) # observed - predicted
 
 # view
 catch_diff <- catch_diff %>%
@@ -166,12 +163,11 @@ for(i in 1:length(all_fg)){
       theme_bw()+
       facet_grid(Name~Type)
     
-    ggsave(paste0("fleets/data_vs_catch/", this_fg, ".png"), p, width = 9, height = 4)
+    ggsave(paste0("fleets/data_vs_catch/by_area/", this_fg, ".png"), p, width = 9, height = 3)
   }
   
 }
 
-# TODO: move this forward - need to add 0 boxes to the data, reassign island catches (check bc we have done it)
 # Now it will be way out of sorts, but the final goal WHEN WE WORK WITH REAL F's will be to:
 # 1. Look at catches in space in the reconstruction
 # 2. Get a scalar of the ratio between what is caught and what should be caught
@@ -180,9 +176,112 @@ for(i in 1:length(all_fg)){
 
 
 # Look at catch by fleet --------------------------------------------------
+# Check that catch split by fleet is similar to the data
+# Because the data is only for AK, drop BC from the catch
 
 catch_atlantis_fleets <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
-                                        fleet_struc = T,
-                                        relative = T,
-                                        run = 1559,
-                                        key = fleet_key)
+                                               fleet_struc = T,
+                                               relative = T,
+                                               run = 1559,
+                                               key = fleet_key)
+
+# average of end of the run
+catch_atlantis_fleets_end <- catch_atlantis_fleets %>%
+  filter(ts > (max(ts)-5)) %>%
+  filter(box_id < 92) %>% # keep AK only
+  group_by(fleet, Name) %>%
+  summarize(mt = mean(mt)) %>%
+  ungroup() %>%
+  group_by(Name) %>%
+  mutate(tot_mt = sum(mt)) %>%
+  ungroup() %>%
+  mutate(prop = mt / tot_mt)
+
+# no space - fleets only
+catch_data <- fleets %>%
+  ungroup() %>%
+  left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+  select(year, box_id, Name, fleet, weight_mton) %>%
+  mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+  group_by(year, fleet, Name) %>%
+  summarise(mt = sum(weight_mton)) %>% # sum up across boxes
+  ungroup() %>%
+  filter(year > (max(year)-5)) %>%
+  group_by(fleet, Name) %>%
+  summarize(mt = mean(mt)) %>%
+  ungroup()
+
+# add missing combinations
+dummy_df <- expand.grid("fleet" = unique(catch_data$fleet), "Name" = unique(catch_data$Name))
+catch_data <- catch_data %>%
+  full_join(dummy_df) %>%
+  mutate(mt = replace_na(mt, 0))
+
+# get relative catch
+catch_data <- catch_data %>%
+  group_by(Name) %>%
+  mutate(tot_mt = sum(mt, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(prop = mt / tot_mt)
+
+# deal with codes for the fleets being different
+rewrite_codes <- function(original_string){
+  # Split the string into words based on '_'
+  words <- unlist(strsplit(original_string, "_"))
+  
+  # Convert each word to Title Case
+  title_case_words <- sapply(words, function(word) {
+    paste0(toupper(substr(word, 1, 1)), tolower(substr(word, 2, nchar(word))))
+  })
+  
+  # Concatenate the words back together
+  final_string <- paste0(title_case_words, collapse = "")
+  
+  return(final_string)
+}
+
+catch_data <- catch_data %>% 
+  rowwise() %>%
+  mutate(fleet = rewrite_codes(as.character(fleet))) %>%
+  ungroup()
+
+# stack
+catch_data <- catch_data %>% mutate(Type = "data")
+catch_atlantis_fleets_end <- catch_atlantis_fleets_end %>% mutate(Type = "model")
+catch_diff <- rbind(catch_data, catch_atlantis_fleets_end)
+catch_diff <- catch_diff %>%
+  left_join(fleet_key %>% select(Code, Name), by = c("fleet" = "Code"))
+
+# view
+# drop empty fleets and background F
+to_drop <- c("Canada",
+             "background",
+             unique(catch_diff$fleet)[grepl("dummy", unique(catch_diff$fleet))])
+to_keep <- setdiff(unique(catch_diff$fleet), to_drop)
+
+# make a plot per species
+for(i in 1:length(all_fg)){
+  this_fg <- all_fg[i]
+  
+  if(this_fg %in% unique(catch_data$Name)){
+    
+    print(paste("Doing", this_fg))
+    
+    p <- catch_diff %>%
+      filter(Name.x == this_fg) %>%
+      filter(fleet %in% to_keep) %>%
+      filter(prop > 0) %>%
+      ggplot(aes(x = Type, y = prop, fill = Name.y))+
+      geom_bar(stat = "identity", position = "stack")+
+      theme_bw()+
+      facet_wrap(~Name.x)
+    
+    ggsave(paste0("fleets/data_vs_catch/by_fleet/", this_fg, ".png"), p, width = 8, height = 4)
+    
+  }
+  
+}
+
+# the proportion of total catch by fleet works well
+# Though this is the easy part - you may have a species that is barely caught at all being caught in the right proportions by different fleets
+
