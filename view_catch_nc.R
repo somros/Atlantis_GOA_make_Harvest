@@ -21,8 +21,8 @@ select <- dplyr::select
 catch_nc_file_base <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1517/outputGOA01517_testCATCH.nc"
 bio_nc_file_base <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1517/outputGOA01517_test.nc"
 # mpa
-catch_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1559/outputGOA01559_testCATCH.nc"
-bio_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1559/outputGOA01559_test.nc"
+catch_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/outputGOA01562_testCATCH.nc"
+bio_nc_file_mpa <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/outputGOA01562_test.nc"
 # groups
 grps <- read.csv("data/GOA_Groups.csv")
 all_fg <- grps %>% filter(GroupType %in% c("FISH", "SHARK")) %>% pull(Name)
@@ -55,7 +55,7 @@ catch_nc_base <- build_catch_output_v2(catch_nc = catch_nc_file_base,
 catch_nc_mpa <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                       fleet_struc = F,
                                       relative = T,
-                                      run = 1559,
+                                      run = 1562,
                                       key = fleet_key)
 
 # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
@@ -70,8 +70,11 @@ catch_diff <- goa_sf %>%
   left_join(catch_diff, by = "box_id")
 
 # view
+
+to_plot <- c("Pollock","Cod","Arrowtooth_flounder","Flatfish_shallow","Flatfish_deep","Rex_sole","Flathead_sole","Pacific_ocean_perch","Sablefish","Halibut")
+
 catch_diff %>%
-  filter(ts == max(ts)) %>%
+  filter(ts == 15, Name %in% to_plot) %>%
   ggplot()+
   geom_sf(aes(fill = residual_mt))+
   scale_fill_viridis()+
@@ -80,10 +83,11 @@ catch_diff %>%
 
 # other view
 catch_diff %>%
-  filter(ts == max(ts)) %>%
+  filter(ts == 15, Name %in% to_plot) %>%
   ggplot(aes(x = mt.x, y = mt.y, color = box_id))+
   geom_point()+
   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")+  # Add 1:1 line
+  labs(x = "Catch in non-spatial run", y = "Catch in spatial run")+
   facet_wrap(~Name, scales = "free")
 
 # This step shows you the difference between the normal mFC Atlantis run and the run with the new MPA setup
@@ -97,7 +101,7 @@ catch_diff %>%
 catch_atlantis <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                         fleet_struc = F,
                                         relative = T,
-                                        run = 1559,
+                                        run = 1562,
                                         key = fleet_key)
 
 # average of end of the run
@@ -188,7 +192,7 @@ for(i in 1:length(all_fg)){
 catch_atlantis_species <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                                fleet_struc = T,
                                                relative = T,
-                                               run = 1559,
+                                               run = 1562,
                                                key = fleet_key)
 
 # average of end of the run
@@ -382,7 +386,7 @@ for(i in 1:length(to_keep)){
 # of availability.
 # A great example is pollock. 99% of it is caught by a trawl fleet (same as data). 
 # Looking at this trawl fleet however, we see that in the model it catches much more arrowtooth (or less pollock) than it should
-# So, it this fleet catching more arrowtooth or less pollock? 
+# So, is this fleet catching more arrowtooth or less pollock? 
 
 # There is a need to calibrate this. A few ways to do it:
 # 1. Manipulate mFC. This gives you control over the species and the fleet, but not over space
@@ -411,7 +415,7 @@ catch_nc_base <- build_catch_output_v2(catch_nc = catch_nc_file_base,
 catch_nc_mpa <- build_catch_output_v2(catch_nc = catch_nc_file_mpa, 
                                       fleet_struc = F,
                                       relative = T,
-                                      run = 1559,
+                                      run = 1562,
                                       key = fleet_key)
 
 # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
@@ -427,9 +431,9 @@ catch_diff_long <- catch_diff %>%
   
 # view
 catch_diff_long %>%
-  filter(Name %in% all_fg) %>%
+  filter(Name %in% to_plot) %>%
   ggplot()+
-  geom_line(aes(x = ts, y = mt, color = run))+
+  geom_line(aes(x = ts, y = mt, color = run), linewidth = 1.5)+
   facet_wrap(~Name, scales = "free")
 
 # One key question here is: How short a run can we get away with?
