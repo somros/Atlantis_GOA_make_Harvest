@@ -39,7 +39,7 @@ all_fg <- grps %>% filter(GroupType %in% c("FISH", "SHARK")) %>% pull(Name)
 goa_bgm <- read_bgm("data/GOA_WGS84_V4_final.bgm")
 goa_sf <- goa_bgm %>% box_sf()
 
-# catch data from reconstruction
+# catch data from reconstruction # make this a function
 source("handle_fleet_catch_reconstruction.R")
 
 # load function to extract catch from netcdf
@@ -344,6 +344,54 @@ for(i in 1:length(to_keep)){
   ggsave(paste0("fleets/data_vs_catch/by_area_and_fleet/", this_fleet, ".png"), p, width = 9, height = 3)
   
 }
+
+
+# Calibrate MPAYYY --------------------------------------------------------
+# based on the bit above, we can identify differences in proportional catch between data and model
+# In theory, you can rescale MPAYYY based on these discrepancies
+# I am  not convinced that relative quantities are going to work here, you could rescale biomasses but this seems odd
+# let's try it 
+
+scalars <- catch_diff %>%
+  select(box_id, fleet, Type, Prop) %>%
+  filter(fleet %in% to_keep) %>%
+  pivot_wider(names_from = "Type", values_from = "Prop") %>%
+  mutate(scalar = data / model) %>%
+  rowwise() %>%
+  mutate(scalar = ifelse(is.nan(scalar), 1, scalar)) %>% # turn NaN's to 1's, meaning no scaling
+  ungroup()
+
+# which harvest.prm file do you want to work on
+harvest_old <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/GOA_harvest_fleets_mpa_v3.prm"
+harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/GOA_harvest_fleets_mpa_v4.prm"
+
+harvest_tab <- readLines(harvest_old)
+
+for(i in 1:length(to_keep)){
+  
+  this_code <- to_keep[i]
+  this_scalar_vec <- scalars %>%
+    filter(fleet == this_code) %>%
+    arrange(box_id) %>%
+    pull(scalar)
+  
+  # old mFC
+  MPAYYY_old <- harvest_tab[grep(paste0("MPA", this_code, " 109"), harvest_tab)+1]
+  MPAYYY_old_vec <- as.numeric(unlist(strsplit(MPAYYY_old, " ")))
+  
+  # fix fleets that are fishing in Canada and should not
+  if(MPAYYY_old_vec[93] != 0) MPAYYY_old_vec[93] <- 0
+  
+  # new vec
+  MPAYYY_new_vec <- MPAYYY_old_vec * this_scalar_vec
+  MPAYYY_new <- paste(as.character(MPAYYY_new_vec), collapse = " ")
+  
+  # replace relevant line
+  harvest_tab[grep(paste0("MPA", this_code, " 109"), harvest_tab)+1] <- MPAYYY_new
+}
+
+# write out
+writeLines(harvest_tab, con = harvest_new)
 
 # Fleet makeup of a species' catch --------------------------------------------------
 # Check that catch split by fleet is similar to the data
