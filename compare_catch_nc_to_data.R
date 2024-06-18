@@ -43,7 +43,7 @@ catch_dat <- readRDS(here(dir, "fleets/fleet_total_catch_atl.RDS"))
 fleet_key <- read.csv(here(dir, "data/GOA_fisheries.csv"))
 
 # load functions
-source("read_catch_nc_functions.R") # TODO: rename this
+source("catch_compare_functions.R")
 
 # handle the catch reconstruction
 catch_data <- prepare_catch_data(catch_dat = catch_dat, do_boundary = TRUE, do_islands = TRUE)
@@ -60,7 +60,6 @@ to_keep <- setdiff(fleet_key$Code, to_drop)
 # make a folder for the plots
 plotdir <- here(dir, "fleets", "catch_plots", new_run)
 dir.create(plotdir, recursive = T)
-
 
 # total catch comparison plots --------------------------------------------
 
@@ -106,7 +105,6 @@ scalars <- plot_spatial_catch(nc_new = catch_nc_file_new,
                               write_scalars = T,
                               catch_data = catch_data, 
                               by_species = F)
-
 
 # optionally calibrate the MPAYYY scalars based on the difference between the two runs
 # which harvest.prm file do you want to work on?
