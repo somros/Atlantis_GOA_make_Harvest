@@ -19,7 +19,7 @@ pacman::p_load(tidync, ncdf4, tidyverse, sf, rbgm, viridis, here, RColorBrewer)
 
 # runs to compare and other settings
 old_run <- 1517
-new_run <- 1563
+new_run <- 1562
 select <- dplyr::select
 dir <- here()
 data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/" # directory with the Atlantis runs
@@ -76,10 +76,10 @@ scalars <- plot_total_catch(nc_old = catch_nc_file_old,
 # optionally calibrate the mFC scalars based on the difference between the two runs
 
 # which harvest.prm file do you want to work on
-harvest_old <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1563/GOA_harvest_fleets_mpa_v4.prm"
-harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1563/GOA_harvest_fleets_mpa_v5.prm"
-
-calibrate_mfc_total(harvest_old, harvest_new, scalars) # this may lead to incorrect spatial patterns; and it may have no effect if a fishery fails in a box because its target isn't there
+# harvest_old <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1563/GOA_harvest_fleets_mpa_v4.prm"
+# harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1563/GOA_harvest_fleets_mpa_v5.prm"
+# 
+# calibrate_mfc_total(harvest_old, harvest_new, scalars) # this may lead to incorrect spatial patterns; and it may have no effect if a fishery fails in a box because its target isn't there
 
 # Compare spatial patterns in the catch between run and data --------------
 
@@ -109,10 +109,10 @@ scalars <- plot_spatial_catch(nc_new = catch_nc_file_new,
 # optionally calibrate the MPAYYY scalars based on the difference between the two runs
 # which harvest.prm file do you want to work on?
 # TODO: what is happening with BC here? Are you counting it in getting the scalars by box?
-harvest_old <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/GOA_harvest_fleets_mpa_v3.prm"
-harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/GOA_harvest_fleets_mpa_v4.prm"
-
-calibrate_mfc_total(harvest_old, harvest_new, scalars) # this may lead to total catches that are too high or too low
+# harvest_old <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/GOA_harvest_fleets_mpa_v3.prm"
+# harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_1562/GOA_harvest_fleets_mpa_v4.prm"
+# 
+# calibrate_mfc_total(harvest_old, harvest_new, scalars) # this may lead to total catches that are too high or too low
 
 
 # Catch composition comparison plots --------------------------------------
