@@ -1,6 +1,18 @@
 
 # Utility functions -------------------------------------------------------
 
+#' renames fleet codes from the catch reconstruction to match the codes used by Atlantis
+#'
+#' @param original_string fleet name in the catch reconstruction 
+#'
+#' @description 
+#' renames fleet codes from the catch reconstruction to match the codes used by Atlantis
+#' @return name compliant with the fleet codes used by Atlantis
+#' @export
+#' 
+#' 
+#' 
+
 # deal with codes for the fleets being different
 rewrite_codes <- function(original_string){
   # Split the string into words based on '_'
@@ -19,6 +31,29 @@ rewrite_codes <- function(original_string){
 
 
 # Plotting functions ------------------------------------------------------
+
+#' Plot catch from NC files comparing two Atlantis runs. 
+#'
+#' @param nc_old path to the netcdf file of the old run
+#' @param nc_new path to the netcdf file of the new run
+#' @param fleet_struc TRUE/FALSE whether you want to see results by fleet (T) or total (F)
+#' @param relative TRUE/FALSE whether you want relative proportion of catch per box (T) or raw catch (F)
+#' @param old_run number of previous run
+#' @param new_run number of current run
+#' @param key the fisheries.csv file from Atlantis 
+#' @param plotdir path to the directory where the output plots will be stored
+#' @param write_scalars writes out scalars to calibrate mFC based on differences between the two runs
+#' 
+#' @description 
+#' Extracts catch output from Atlantis catch.nc files from two runs to compare. It performs comparisons of total catch and catch by box.
+#' Optionally, it calculates the ration between the old and new run and gets
+#' scalars that, if multiplied by the mFC values in the new run, will yield the catches in the old run. In this context, "old" is the target you strive for
+#' while new is where you are now.
+#' @return Optional data frame of scalars by species for mFC calibration
+#' @export
+#' 
+#' 
+#' 
 
 plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_run, new_run, key, plotdir, write_scalars = F){
   
@@ -118,8 +153,35 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
   
 }
 
+# TODO: could ALL these functions become one with args for which plot / slicing you want?
 
-# could ALL these functions become one with args for which plot / slicing you want?
+#' Compares catch from the nc file of one Atlantis run with data in space. 
+#'
+#' @param nc_new path to the netcdf file of the new run
+#' @param fleet_struc TRUE/FALSE whether you want to see results by fleet (T) or total (F)
+#' @param relative TRUE/FALSE whether you want relative proportion of catch per box (T) or raw catch (F)
+#' @param old_run number of previous run
+#' @param new_run number of current run
+#' @param key the fisheries.csv file from Atlantis 
+#' @param plotdir path to the directory where the output plots will be stored
+#' @param write_scalars writes out scalars to calibrate mFC based on differences between the two runs
+#' @param catch_data data frame with the catch reconstruction
+#' @param by_species TRUE/FALSE whether you want to make plots by species (T) or by fleet (F)
+#' 
+#' 
+#' @description 
+#' Extracts catch output from Atlantis catch.nc files from one model run and compares it with data. 
+#' It performs comparisons of catches in space, either by species or by fleet.
+#' It is set up to operate on relative catch distributions rather than raw tonnage.
+#' Optionally, it calculates the ration between the old and new run and gets scalars that, if multiplied by the MPAYYY values in the new run, 
+#' will yield the catches in the old run. In this context, "old" is the target you strive for while new is where you are now.
+#' It will produce maps.
+#' @return Optional data frame of scalars by species for mFC calibration
+#' @export
+#' 
+#' 
+#'
+
 plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, key, plotdir, write_scalars = F, catch_data = catch_data, by_species = T){
   
   if(by_species){
@@ -376,7 +438,32 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
   
 }
 
+# TODO: the args of this are identical to the one above - These should all be the same function
 
+#' Compares catch compositions by species and fleet from the nc file of one Atlantis run and from the data. 
+#'
+#' @param nc_new path to the netcdf file of the new run
+#' @param fleet_struc TRUE/FALSE whether you want to see results by fleet (T) or total (F)
+#' @param relative TRUE/FALSE whether you want relative proportion of catch per box (T) or raw catch (F)
+#' @param old_run number of previous run
+#' @param new_run number of current run
+#' @param key the fisheries.csv file from Atlantis 
+#' @param plotdir path to the directory where the output plots will be stored
+#' @param write_scalars writes out scalars to calibrate mFC based on differences between the two runs
+#' @param catch_data data frame with the catch reconstruction
+#' @param by_species TRUE/FALSE whether you want to make plots by species (T) or by fleet (F)
+#' 
+#' 
+#' @description 
+#' Extracts catch output from Atlantis catch.nc files from one model run and compares it with data. 
+#' It performs comparisons of catch composition either by species or by fleet.
+#' It is set up to operate on relative catch distributions rather than raw tonnage.
+#' It will produce bar charts.
+#' @return NA
+#' @export
+#' 
+#' 
+#'
 
 plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_run, key, plotdir, write_scalars = F, catch_data = catch_data, by_species = T){
   
@@ -556,11 +643,6 @@ plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_ru
 
 
 # Calibration functions ---------------------------------------------------
-
-
-
-
-
 
 
 calibrate_mfc_total <- function(harvest_old, harvest_new, scalars){

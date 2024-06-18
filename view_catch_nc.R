@@ -1,5 +1,5 @@
 # Alberto Rovellini
-# 6/7/2024
+# 6/18/2024
 # this script extracts and views catch in space from netcdf files
 # allow for comparisons between runs (e.g., Base no MPA, MPA fully open, in the future partially closed MPAs, etc)
 # allows for comparisons between a run and Adam's catch streams (aka "the truth")
@@ -15,33 +15,20 @@
 # Island boxes: split catch among neighboring boxes based on the existing proportions
 # boundary boxes: assume that this is catch that occurred outside the Atlantis domain and drop it from the reconstruction
 
-library(tidync)
-library(ncdf4)
-library(tidyverse)
-library(sf)
-library(rbgm)
-library(viridis)
-library(here)
-library(RColorBrewer)
-
-select <- dplyr::select
-dir <- here()
+pacman::p_load(tidync, ncdf4, tidyverse, sf, rbgm, viridis, here, RColorBrewer)
 
 # runs to compare and other settings
 old_run <- 1517
 new_run <- 1563
-
+select <- dplyr::select
+dir <- here()
+data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/" # directory with the Atlantis runs
 
 # Read data ---------------------------------------------------------------
 
-# directory with the Atlantis runs
-data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/"
-
 # nc files
 catch_nc_file_old <- paste0(data_dir, "/out_", old_run, "/outputGOA0", old_run, "_testCATCH.nc") # base
-#bio_nc_file_old <- paste0(data_dir, "/out_", old_run, "/outputGOA0", old_run, "_test.nc") # base
 catch_nc_file_new <- paste0(data_dir, "/out_", new_run, "/outputGOA0", new_run, "_testCATCH.nc") # mpa
-#bio_nc_file_new <- paste0(data_dir, "/out_", new_run, "/outputGOA0", new_run, "_test.nc") # mpa
 
 # Atlantis groups file
 grps <- read.csv(here(dir, "data/GOA_Groups.csv"))
@@ -130,7 +117,8 @@ harvest_new <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_
 calibrate_mfc_total(harvest_old, harvest_new, scalars) # this may lead to total catches that are too high or too low
 
 
-# Fleet makeup of a species' catch --------------------------------------------------
+# Catch composition comparison plots --------------------------------------
+
 # Check that catch split by fleet is similar to the data
 # by species
 plot_catch_composition(nc_new = catch_nc_file_new, 
@@ -153,34 +141,3 @@ plot_catch_composition(nc_new = catch_nc_file_new,
                        write_scalars = T, 
                        catch_data = catch_data, 
                        by_species = F)
-
-
-
-
-# Species makeup of a fleet's catch ----------------------------------------
-
-
-# Most fleets look somewhat similar to the data in their catch compositions, but there are some clear problems
-# of availability.
-# A great example is pollock. 99% of it is caught by a trawl fleet (same as data). 
-# Looking at this trawl fleet however, we see that in the model it catches much more arrowtooth (or less pollock) than it should
-# So, is this fleet catching more arrowtooth or less pollock? 
-
-# There is a need to calibrate this. A few ways to do it:
-# 1. Manipulate mFC. This gives you control over the species and the fleet, but not over space
-# 2. Manipulate MPAYYY (it takes entries >1). This gives you control over a fleet and the areas, but not the species
-
-# When the spatial element of the setup is what causes it to underharvest, it seems sensible to use approach 2.
-# Problem with that is - you amp up a fleet and you may end up overharvesting some of the species in the fleet to get the main target right
-
-# Perhaps step 1 should be: at model-level, can we catch the same amount of a species that we get in the non-spatial setup?
-# Then we can look at species and fleet makeup and compare it to the data.
-
-# Should we change the proportions of the mFC vector? This would make us drift away from the fleet makeup of the catch of a species, which now is on point
-# So perhaps you shouls start at species level: how far off is the final catch of ATF between the two setup?
-# Apply that scalar to mFC - ACROSS all entries. This way, proportions of catch among fleets will be the same(ish?), but the total catch will be higher.
-# Spatial distribution of catch should not change much (or should it?)
-# Species makeup of each fleet WILL change (for the better or for the worse?)
-
-
-
