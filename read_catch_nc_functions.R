@@ -16,15 +16,15 @@
 #' 
 #' 
 
-prepare_catch_data <- function(catch, do_boundary = FALSE, do_islands = FALSE){
+prepare_catch_data <- function(catch_dat, do_boundary = FALSE, do_islands = FALSE){
   
-  fleets <- catch
+  fleets <- catch_dat
   
   # zero-out BBs (TODO: thinks if this makes sense)
   if(do_boundary){
     
     bboxes <- goa_sf %>% filter(boundary == TRUE) %>% pull(box_id)
-    fleets <- catch %>%
+    fleets <- fleets %>%
       rowwise() %>%
       mutate(weight_mton = ifelse(box_id %in% bboxes,0,weight_mton)) %>%
       ungroup()
