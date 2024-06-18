@@ -1,0 +1,624 @@
+
+# Utility functions -------------------------------------------------------
+
+# deal with codes for the fleets being different
+rewrite_codes <- function(original_string){
+  # Split the string into words based on '_'
+  words <- unlist(strsplit(original_string, "_"))
+  
+  # Convert each word to Title Case
+  title_case_words <- sapply(words, function(word) {
+    paste0(toupper(substr(word, 1, 1)), tolower(substr(word, 2, nchar(word))))
+  })
+  
+  # Concatenate the words back together
+  final_string <- paste0(title_case_words, collapse = "")
+  
+  return(final_string)
+}
+
+
+# Plotting functions ------------------------------------------------------
+
+plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_run, new_run, key, plotdir, write_scalars = F){
+  
+  catch_nc_old <- build_catch_output_v2(catch_nc = nc_old, 
+                                        fleet_struc = fleet_struc,
+                                        relative = relative,
+                                        run = old_run,
+                                        key = key)
+  
+  catch_nc_new <- build_catch_output_v2(catch_nc = nc_new, 
+                                        fleet_struc = fleet_struc,
+                                        relative = relative,
+                                        run = new_run,
+                                        key = key)
+  
+  
+  # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
+  catch_diff <- catch_nc_old %>%
+    left_join(catch_nc_new, by = c("ts", "box_id", "Name")) %>%
+    select(ts, Name, mt_goa.x, mt_goa.y) %>%
+    distinct() %>%
+    rename(old = mt_goa.x, new = mt_goa.y) 
+  
+  # for plotting
+  catch_diff_long <- catch_diff %>%
+    pivot_longer(-c(ts,Name), names_to = "run", values_to = "mt")
+  
+  # view
+  catch_diff_long %>%
+    filter(Name %in% to_plot) %>%
+    ggplot()+
+    geom_line(aes(x = ts, y = mt, color = run), linewidth = 1.5)+
+    facet_wrap(~Name, scales = "free")
+  
+  ggsave(paste0(plotdir, "/", new_run, "_vs_", old_run, ".png"), width = 10, height = 10)
+  
+  # One key question here is: How short a run can we get away with?
+  # The plot above indicates that, while there can still be some divergence at the end of the run,
+  # for most groups it is fairly apparent already at the start of the run that the fishery can't hit the non-spatial quota
+  # So in the interest of ironing out the big kinks fast, let's do some bried (1-2 years) runs
+  
+  # for ease of visualization, add a plot for the first time step only (you will need it when you have 1-yr long runs)
+  catch_diff_long %>%
+    filter(Name %in% all_fg) %>%
+    filter(ts == 1) %>%
+    ggplot()+
+    geom_bar(aes(x = run, y = mt), stat = "identity")+
+    facet_wrap(~Name, scales = "free")
+  
+  ggsave(paste0(plotdir, "/", new_run, "_vs_", old_run, "_ts1.png"), width = 10, height = 10)
+  
+  # compare catch in space
+  # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
+  catch_diff2 <- catch_nc_old %>%
+    left_join(catch_nc_new, by = c("ts", "box_id", "Name")) %>%
+    mutate(residual_mt = mt.x - mt.y,
+           residual_prop = prop.x - prop.y)
+  
+  # add space
+  catch_diff2 <- goa_sf %>%
+    select(box_id) %>%
+    left_join(catch_diff2, by = "box_id")
+  
+  # view
+  
+  catch_diff2 %>%
+    filter(ts == 15, Name %in% to_plot) %>% # 15 just as test
+    ggplot()+
+    geom_sf(aes(fill = residual_mt))+
+    scale_fill_viridis()+
+    theme_bw()+
+    facet_wrap(~Name, ncol = 3)
+  ggsave(paste0(plotdir, "/", new_run, "_vs_", old_run, "_spatial.png"), width = 10, height = 8)
+  
+  # other view
+  catch_diff2 %>%
+    filter(ts == 15, Name %in% to_plot) %>%
+    ggplot(aes(x = mt.x, y = mt.y, color = box_id))+
+    geom_point()+
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")+  # Add 1:1 line
+    labs(x = "Catch in non-spatial run", y = "Catch in spatial run")+
+    facet_wrap(~Name, scales = "free")
+  ggsave(paste0(plotdir, "/", new_run, "_vs_", old_run, "_by_box.png"), width = 10, height = 10)
+  
+  # Optionally get scaling factors to calibrate mFC
+  if(write_scalars){
+    
+    scalars <- catch_diff %>%
+      filter(ts == 1) %>%
+      mutate(scalar = old / new) %>%
+      select(Name, scalar) %>%
+      left_join(grps %>% select(Name, Code))
+    
+    return(scalars)
+    
+  }
+  
+}
+
+
+# could ALL these functions become one with args for which plot / slicing you want?
+plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, key, plotdir, write_scalars = F, catch_data = catch_data, by_species = T){
+  
+  if(by_species){
+    
+    catch_nc_new <- build_catch_output_v2(catch_nc = nc_new, 
+                                          fleet_struc = fleet_struc,
+                                          relative = relative,
+                                          run = new_run,
+                                          key = key)
+    
+    # average of end of the run
+    catch_nc_end <- catch_nc_new %>%
+      filter(ts > (max(ts)-5)) %>%
+      group_by(box_id, Name) %>%
+      summarize(mt = mean(mt)) %>%
+      ungroup() %>%
+      group_by(Name) %>%
+      mutate(tot_mt = sum(mt)) %>%
+      ungroup() %>%
+      mutate(prop = mt / tot_mt)
+    
+    # start wih no fleets here - space only
+    catch_dat <- catch_data %>%
+      ungroup() %>%
+      left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+      select(year, box_id, Name, fleet, weight_mton) %>%
+      mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+      group_by(year, box_id, Name) %>%
+      summarise(mt = sum(weight_mton)) %>% # sum up across fleets
+      ungroup() %>%
+      filter(year > (max(year)-5)) %>%
+      group_by(box_id, Name) %>%
+      summarize(mt = mean(mt)) %>%
+      ungroup()
+    
+    # add missing combinations
+    dummy_df <- expand.grid("box_id" = 0:108, "Name" = unique(catch_dat$Name))
+    catch_dat <- catch_dat %>%
+      full_join(dummy_df) %>%
+      mutate(mt = replace_na(mt, 0))
+    
+    # get relative catch
+    catch_dat <- catch_dat %>%
+      group_by(Name) %>%
+      mutate(tot_mt = sum(mt, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(prop = mt / tot_mt)
+    
+    # check differences
+    catch_diff <- catch_dat %>%
+      left_join(catch_nc_end, by = c("box_id", "Name"))# %>%
+    # mutate(residual = mt.x - mt.y,
+    #        ratio = mt.x / mt.y) # observed - predicted
+    
+    # view
+    catch_diff <- catch_diff %>%
+      select(box_id, Name, prop.x, prop.y) %>%
+      rename(data = prop.x, model = prop.y) %>%
+      pivot_longer(-c(box_id, Name), names_to = "Type", values_to = "Prop")
+    
+    # add space
+    catch_diff <- goa_sf %>%
+      select(box_id, boundary) %>%
+      left_join(catch_diff, by = "box_id")
+    
+    # make a directory
+    dir.create(paste0(plotdir, "/spatial/species/"), recursive = T)
+    
+    for(i in 1:length(all_fg)){
+      this_fg <- all_fg[i]
+      
+      if(this_fg %in% unique(catch_diff$Name)){
+        print(paste("doing", this_fg))
+        
+        catch_diff %>%
+          filter(Name == this_fg) %>%
+          ggplot()+
+          geom_sf(aes(fill = Prop))+
+          scale_fill_viridis()+
+          theme_bw()+
+          labs(title = this_fg)+
+          facet_grid(Name~Type)
+        ggsave(paste0(plotdir, "/spatial/species/data_vs_", new_run, this_fg, ".png"), width = 8, height = 4)
+        
+      }
+      
+    }
+    
+  } else { # do this by fleet
+    
+    if(!fleet_struc)stop("You want to plot fleet catch in space but you are not keeping the fleet structure")
+    
+    catch_nc_new <- build_catch_output_v2(catch_nc = nc_new, 
+                                          fleet_struc = fleet_struc,
+                                          relative = relative,
+                                          run = new_run,
+                                          key = key)
+    
+    # first - look at total catch across the model and species
+    # Is the split across fleets the same in the data and the model?
+    
+    tot_atlantis <- catch_nc_new %>%
+      filter(fleet != "background", fleet != "Canada") %>%
+      filter(ts > (max(ts)-5)) %>%
+      group_by(box_id, fleet, Name) %>%
+      summarize(mt = mean(mt)) %>% # mean over last 5 years
+      ungroup() %>%
+      group_by(fleet) %>%
+      summarize(mt = sum(mt)) %>% # sum over species and boxes
+      ungroup() %>%
+      mutate(tot = sum(mt)) %>% # total catch
+      mutate(prop = mt / tot) %>%
+      mutate(Type = "model") %>%
+      select(Type, fleet, prop)
+    
+    bg <- catch_nc_new %>%
+      filter(fleet == "background")
+    
+    tot_data <- catch_data %>%
+      ungroup() %>%
+      left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+      select(year, box_id, Name, fleet, weight_mton) %>%
+      mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+      group_by(year, fleet) %>%
+      summarise(mt = sum(weight_mton)) %>% # sum up across boxes and species
+      ungroup() %>%
+      filter(year > (max(year)-5)) %>% # keep last 5 years of data
+      group_by(fleet) %>%
+      summarize(mt = mean(mt)) %>% # average over last 5 years
+      ungroup() %>%
+      mutate(tot = sum(mt), # total catch
+             prop = mt / tot) %>%
+      rowwise() %>%
+      mutate(fleet = rewrite_codes(fleet))%>%
+      mutate(Type = "data") %>%
+      select(Type, fleet, prop)
+    
+    catch_diff <- rbind(tot_atlantis, tot_data) %>%
+      left_join(fleet_key %>% select(Code, Name), by = c("fleet"="Code"))
+    
+    # view
+    # this one belongs with the total catch function above
+    colourCount <- length(to_keep) 
+    getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+    
+    catch_diff %>%
+      filter(fleet %in% to_keep) %>%
+      ggplot(aes(x = Type, y = prop, fill = Name))+
+      geom_bar(stat = "identity", position = "stack")+
+      scale_fill_manual(values = getPalette(colourCount))+
+      labs(title = "Fleet composition of the catch (data vs model")
+    ggsave(paste0(plotdir, "/data_vs_", new_run, "_total_catch_byfleet.png"), width = 8, height = 4)
+    
+    # Now produce spatial plots but fleet-by-fleet
+    # model output
+    catch_nc_end <- catch_nc_new %>%
+      filter(ts > (max(ts)-5)) %>% # keep last 5 years of run
+      group_by(box_id, Name, fleet) %>%
+      summarize(mt = mean(mt)) %>% # means across last 5 years
+      group_by(box_id, fleet) %>%
+      summarise(mt = sum(mt)) %>% # sum across species
+      group_by(fleet) %>%
+      mutate(tot_mt = sum(mt)) %>% # get total annual catch from a fleet
+      ungroup() %>% 
+      mutate(Prop = mt / tot_mt) %>% # get proportions by box
+      mutate(Type = "model") %>%
+      select(box_id, fleet, Prop, Type)
+    
+    # data
+    catch_dat <- catch_data %>%
+      ungroup() %>%
+      left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+      select(year, box_id, Name, fleet, weight_mton) %>%
+      mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+      filter(year >= (max(year)-5)) %>%
+      group_by(box_id, Name, fleet) %>%
+      summarize(mt = mean(weight_mton)) %>% # averages over time
+      group_by(box_id, fleet) %>%
+      summarise(mt = sum(mt)) %>% # sum across species
+      ungroup()
+    
+    # add missing combinations
+    dummy_df <- expand.grid("box_id" = 0:108, "fleet" = unique(catch_dat$fleet))
+    catch_dat <- catch_dat %>%
+      full_join(dummy_df) %>%
+      mutate(mt = replace_na(mt, 0))
+    
+    # get relative catch
+    catch_dat <- catch_dat %>%
+      group_by(fleet) %>%
+      mutate(tot_mt = sum(mt)) %>% # get total annual catch from a fleet
+      ungroup() %>%
+      mutate(Prop = mt / tot_mt) %>% # get proportions by box
+      mutate(Type = "data") %>%
+      select(box_id, fleet, Prop, Type) %>%
+      rowwise() %>%
+      mutate(fleet = rewrite_codes(fleet)) %>%
+      ungroup()
+    
+    # bind data and model output
+    catch_diff <- rbind(catch_nc_end, catch_dat) %>%
+      left_join(fleet_key %>% select(Code, Name), by = c("fleet" = "Code"))
+    
+    # add space
+    catch_diff_sf <- goa_sf %>%
+      select(box_id) %>%
+      left_join(catch_diff, by = "box_id")
+    
+    # make a directory
+    dir.create(paste0(plotdir, "/spatial/fleet/"), recursive = T)
+    
+    # make plots
+    for(i in 1:length(to_keep)){
+      this_fleet <- to_keep[i]
+      this_fleet_name <- catch_diff_sf %>%
+        filter(fleet == this_fleet) %>%
+        pull(Name) %>%
+        unique()
+      
+      print(paste("doing", this_fleet))
+      
+      catch_diff_sf %>%
+        filter(fleet == this_fleet) %>%
+        ggplot()+
+        geom_sf(aes(fill = Prop))+
+        scale_fill_viridis()+
+        theme_bw()+
+        facet_grid(~Type)+
+        labs(title = this_fleet_name)
+      ggsave(paste0(plotdir, "/spatial/fleet/data_vs_", new_run, this_fleet, ".png"), width = 8, height = 4)
+      
+    }
+    
+    if(write_scalars){
+      # based on the bit above, we can identify differences in proportional catch between data and model
+      # In theory, you can rescale MPAYYY based on these discrepancies
+      # I am  not convinced that relative quantities are going to work here, you could rescale biomasses but this seems odd
+      # let's try it 
+      
+      scalars <- catch_diff %>%
+        select(box_id, fleet, Type, Prop) %>%
+        filter(fleet %in% to_keep) %>%
+        pivot_wider(names_from = "Type", values_from = "Prop") %>%
+        mutate(scalar = data / model) %>%
+        rowwise() %>%
+        mutate(scalar = ifelse(is.nan(scalar), 1, scalar)) %>% # turn NaN's to 1's, meaning no scaling
+        ungroup()
+      
+      return(scalars)
+    }
+    
+  }
+  
+  
+}
+
+
+
+plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_run, key, plotdir, write_scalars = F, catch_data = catch_data, by_species = T){
+  
+  catch_nc_new <- build_catch_output_v2(catch_nc = nc_new, 
+                                        fleet_struc = fleet_struc,
+                                        relative = relative,
+                                        run = new_run,
+                                        key = key)
+  
+  if(by_species){ # if you want to slice this by species
+    
+    # average of end of the run
+    catch_nc_end <- catch_nc_new %>%
+      filter(ts > (max(ts)-5)) %>%
+      filter(box_id < 92) %>% # keep AK only
+      group_by(fleet, Name) %>%
+      summarize(mt = mean(mt)) %>%
+      ungroup() %>%
+      group_by(Name) %>% # group by species
+      mutate(tot_mt = sum(mt)) %>%
+      ungroup() %>%
+      mutate(prop = mt / tot_mt)
+    
+    # no space - fleets only
+    catch_dat <- catch_data %>%
+      ungroup() %>%
+      left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+      select(year, box_id, Name, fleet, weight_mton) %>%
+      mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+      group_by(year, fleet, Name) %>%
+      summarise(mt = sum(weight_mton)) %>% # sum up across boxes
+      ungroup() %>%
+      filter(year > (max(year)-5)) %>%
+      group_by(fleet, Name) %>%
+      summarize(mt = mean(mt)) %>% # mean of last 5 years
+      ungroup()
+    
+    # add missing combinations
+    dummy_df <- expand.grid("fleet" = unique(catch_dat$fleet), "Name" = unique(catch_dat$Name))
+    catch_dat <- catch_dat %>%
+      full_join(dummy_df) %>%
+      mutate(mt = replace_na(mt, 0))
+    
+    # get relative catch
+    catch_dat <- catch_dat %>%
+      group_by(Name) %>%
+      mutate(tot_mt = sum(mt, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(prop = mt / tot_mt)
+    
+    # deal with code names
+    catch_dat <- catch_dat %>% 
+      rowwise() %>%
+      mutate(fleet = rewrite_codes(as.character(fleet))) %>%
+      ungroup()
+    
+    # stack
+    catch_dat <- catch_dat %>% mutate(Type = "data")
+    catch_nc_end <- catch_nc_end %>% mutate(Type = "model")
+    catch_diff <- rbind(catch_dat, catch_nc_end)
+    catch_diff <- catch_diff %>%
+      left_join(fleet_key %>% select(Code, Name), by = c("fleet" = "Code"))
+    
+    # make a directory
+    dir.create(paste0(plotdir, "/compositions/species/"), recursive = T)
+    
+    # make a plot per species
+    for(i in 1:length(all_fg)){
+      this_fg <- all_fg[i]
+      
+      if(this_fg %in% unique(catch_dat$Name)){
+        
+        print(paste("Doing", this_fg))
+        
+        tmp <- catch_diff %>%
+          filter(Name.x == this_fg) %>%
+          filter(fleet %in% to_keep) %>%
+          filter(prop > 0)
+        
+        colourCount <- length(unique(tmp$Name.y)) 
+        getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+        
+        tmp %>%
+          ggplot(aes(x = Type, y = prop, fill = Name.y))+
+          geom_bar(stat = "identity", position = "stack")+
+          scale_fill_manual(values = getPalette(colourCount))+
+          theme_bw()+
+          facet_wrap(~Name.x)
+        ggsave(paste0(plotdir, "/compositions/species/data_vs_", new_run, this_fg, ".png"), width = 10, height = 8)
+        
+      }
+      
+    }
+    
+  } else { # if you want to slice this by fleet
+    
+    if(!fleet_struc)stop("You want to plot fleet catch in space but you are not keeping the fleet structure")
+    
+    # average of end of the run
+    catch_nc_end <- catch_nc_new %>%
+      filter(ts > (max(ts)-5)) %>%
+      filter(box_id < 92) %>% # keep AK only
+      group_by(fleet, Name) %>%
+      summarize(mt = mean(mt)) %>%
+      ungroup() %>%
+      group_by(fleet) %>% # group by fleets
+      mutate(tot_mt = sum(mt)) %>%
+      ungroup() %>%
+      mutate(prop = mt / tot_mt)
+    
+    # no space - fleets only
+    catch_dat <- catch_data %>%
+      ungroup() %>%
+      left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
+      select(year, box_id, Name, fleet, weight_mton) %>%
+      mutate(weight_mton = replace_na(weight_mton, 0)) %>%
+      group_by(year, fleet, Name) %>%
+      summarise(mt = sum(weight_mton)) %>% # sum up across boxes
+      ungroup() %>%
+      filter(year > (max(year)-5)) %>%
+      group_by(fleet, Name) %>%
+      summarize(mt = mean(mt)) %>%
+      ungroup()
+    
+    # add missing combinations
+    dummy_df <- expand.grid("fleet" = unique(catch_dat$fleet), "Name" = unique(catch_dat$Name))
+    catch_dat <- catch_dat %>%
+      full_join(dummy_df) %>%
+      mutate(mt = replace_na(mt, 0))
+    
+    # get relative catch
+    catch_dat <- catch_dat %>%
+      group_by(fleet) %>%
+      mutate(tot_mt = sum(mt, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(prop = mt / tot_mt)
+    
+    # deal with codes for the fleets being different
+    catch_dat <- catch_dat %>% 
+      rowwise() %>%
+      mutate(fleet = rewrite_codes(as.character(fleet))) %>%
+      ungroup()
+    
+    # stack
+    catch_dat <- catch_dat %>% mutate(Type = "data")
+    catch_nc_end <- catch_nc_end %>% mutate(Type = "model")
+    catch_diff <- rbind(catch_dat, catch_nc_end)
+    catch_diff <- catch_diff %>%
+      left_join(fleet_key %>% select(Code, Name), by = c("fleet" = "Code"))
+    
+    # make a directory
+    dir.create(paste0(plotdir, "/compositions/fleet/"), recursive = T)
+    
+    # make a plot per species
+    for(i in 1:length(to_keep)){
+      this_fleet <- to_keep[i]
+      
+      print(paste("Doing", this_fleet))
+      
+      catch_diff %>%
+        filter(fleet == this_fleet) %>%
+        filter(Name.x %in% all_fg) %>% # do vertebrates only
+        filter(prop > 0) %>%
+        ggplot(aes(x = Type, y = prop, fill = Name.x))+
+        geom_bar(stat = "identity", position = "stack")+
+        theme_bw()+
+        facet_wrap(~Name.y)
+      ggsave(paste0(plotdir, "/compositions/fleet/data_vs_", new_run, this_fleet, ".png"), width = 10, height = 8)
+      
+      
+    }
+    
+  }
+  
+}
+
+
+
+# Calibration functions ---------------------------------------------------
+
+
+
+
+
+
+
+calibrate_mfc_total <- function(harvest_old, harvest_new, scalars){
+  
+  harvest_tab <- readLines(harvest_old)
+  
+  for(i in 1:nrow(scalars)){
+    
+    this_code <- scalars[i,]$Code
+    this_scalar <- scalars[i,]$scalar
+    
+    # old mFC
+    mfc_old <- harvest_tab[grep(paste0("mFC_", this_code, " 33"), harvest_tab)+1]
+    mfc_old_vec <- as.numeric(unlist(strsplit(mfc_old, " ")))
+    
+    # new vec
+    mfc_new_vec <- mfc_old_vec * this_scalar
+    mfc_new <- paste(as.character(mfc_new_vec), collapse = " ")
+    
+    # replace relevant line
+    harvest_tab[grep(paste0("mFC_", this_code, " 33"), harvest_tab)+1] <- mfc_new
+  }
+  
+  # write out
+  writeLines(harvest_tab, con = harvest_new)
+  
+}
+
+
+calibrate_MPAYYY <- function(harvest_old, harvest_new, scalars){
+  
+  harvest_tab <- readLines(harvest_old)
+  
+  for(i in 1:length(to_keep)){
+    
+    this_code <- to_keep[i]
+    this_scalar_vec <- scalars %>%
+      filter(fleet == this_code) %>%
+      arrange(box_id) %>%
+      pull(scalar)
+    
+    # old mFC
+    MPAYYY_old <- harvest_tab[grep(paste0("MPA", this_code, " 109"), harvest_tab)+1]
+    MPAYYY_old_vec <- as.numeric(unlist(strsplit(MPAYYY_old, " ")))
+    
+    # fix fleets that are fishing in Canada and should not
+    if(MPAYYY_old_vec[93] != 0) MPAYYY_old_vec[93] <- 0
+    
+    # new vec
+    MPAYYY_new_vec <- MPAYYY_old_vec * this_scalar_vec
+    MPAYYY_new <- paste(as.character(MPAYYY_new_vec), collapse = " ")
+    
+    # replace relevant line
+    harvest_tab[grep(paste0("MPA", this_code, " 109"), harvest_tab)+1] <- MPAYYY_new
+  }
+  
+  # write out
+  writeLines(harvest_tab, con = harvest_new)
+  
+}
+
