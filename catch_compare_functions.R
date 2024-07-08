@@ -608,6 +608,16 @@ build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, 
 
 plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_run, new_run, key, plotdir, write_scalars = F){
   
+  # nc_old = catch_nc_file_old
+  # nc_new = catch_nc_file_new 
+  # fleet_struc = F
+  # relative = T
+  # old_run = old_run 
+  # new_run = new_run 
+  # key = fleet_key
+  # plotdir = plotdir
+  # write_scalars = T
+  
   catch_nc_old <- build_catch_output_v2(catch_nc = nc_old, 
                                         fleet_struc = fleet_struc,
                                         relative = relative,
@@ -671,7 +681,7 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
   # view
   
   catch_diff2 %>%
-    filter(ts == 15, Name %in% to_plot) %>% # 15 just as test
+    filter(ts == 1, Name %in% to_plot) %>% # 15 just as test
     ggplot()+
     geom_sf(aes(fill = residual_mt))+
     scale_fill_viridis()+
@@ -681,7 +691,7 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
   
   # other view
   catch_diff2 %>%
-    filter(ts == 15, Name %in% to_plot) %>%
+    filter(ts == 1, Name %in% to_plot) %>%
     ggplot(aes(x = mt.x, y = mt.y, color = box_id))+
     geom_point()+
     geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red")+  # Add 1:1 line
@@ -690,10 +700,15 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
   ggsave(paste0(plotdir, "/", new_run, "_vs_", old_run, "_by_box.png"), width = 10, height = 9)
   
   # Optionally get scaling factors to calibrate mFC
+  # note: mFC in the BC fleet should not be calibrated because all boxes are assumed to be 100% open in BC
   if(write_scalars){
     
-    scalars <- catch_diff %>%
-      filter(ts == 1) %>%
+    scalars <- catch_nc_old %>%
+      left_join(catch_nc_new, by = c("ts", "box_id", "Name")) %>%
+      select(ts, box_id, Name, mt.x, mt.y) %>%
+      filter(box_id < 92, ts == 1) %>% # drop BC boxes from these calculations
+      group_by(Name) %>%
+      summarise(old = sum(mt.x), new = sum(mt.y)) %>%
       mutate(scalar = old / new) %>%
       select(Name, scalar) %>%
       left_join(grps %>% select(Name, Code))
@@ -1211,6 +1226,8 @@ calibrate_mfc_total <- function(harvest_old, harvest_new, scalars){
     
     # new vec
     mfc_new_vec <- mfc_old_vec * this_scalar
+    # skip entry for BC fleet (entry 24)
+    mfc_new_vec[24] <- mfc_old_vec[24]
     mfc_new <- paste(as.character(mfc_new_vec), collapse = " ")
     
     # replace relevant line
