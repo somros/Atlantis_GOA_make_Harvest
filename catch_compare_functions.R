@@ -454,6 +454,13 @@ prepare_catch_data <- function(catch_dat, do_boundary = FALSE, do_islands = FALS
 # compare the output of the two
 build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, key){
   
+  # catch_nc = catch_nc_file_old
+  # bio_nc  = NA
+  # fleet_struc  = F
+  # relative = T
+  # run = 1570
+  # key = fleet_key
+  
   # catch
   this_tidync <- tidync(catch_nc)
   this_nc <- ncdf4::nc_open(catch_nc)
@@ -527,20 +534,16 @@ build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, 
   
   catch_nc_df <- bind_rows(catch_nc_ls)
   
-  # get the equilibrium for the last 5 years
-  # catch_nc_eq <- catch_nc_df %>%
-  #   filter(ts > (max(ts)-5)) %>%
-  #   group_by(box_id, Name, fleet) %>% # get average of last 5 years of the run
-  #   summarise(mt_tot = mean(mt, na.rm = T)) %>%
-  #   ungroup()
+  # handle time steps. If the run ended halfway through a year (e.g., run time = 400 days etc), the last reported catch will be the accumulated catch for the year so far
+  # for the purpose of comparing with other runs, they should all be cut to whole years
+  sec_to_yr <- 60*60*24*365 # how many sceconds are there in a year
+  ts <- ncvar_get(this_nc, "t") # extract time steps in seconds
+  ts <- ts[ts>0] # drop 0 because that's initial conditions
+  ts <- ts[ts %% sec_to_yr == 0] # filter ts in seconds based on whole years
+  ts_idx <- 1:length(ts) # create indices numbered from 1
+  catch_nc_df <- catch_nc_df %>% filter(ts %in% ts_idx) # filter the catch data based on whole years
   
-  # make a spatial version
-  # catch_nc_spatial <- goa_sf %>%
-  #   select(box_id) %>%
-  #   full_join(catch_nc_df %>%
-  #               select(ts, box_id, Name, fleet, mt),
-  #             by = "box_id")
-  
+
   catch_nc_df <- catch_nc_df %>%
     select(ts, box_id, Name, fleet, mt)
   
@@ -609,11 +612,11 @@ build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, 
 plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_run, new_run, key, plotdir, write_scalars = F){
   
   # nc_old = catch_nc_file_old
-  # nc_new = catch_nc_file_new 
+  # nc_new = catch_nc_file_new
   # fleet_struc = F
   # relative = T
-  # old_run = old_run 
-  # new_run = new_run 
+  # old_run = old_run
+  # new_run = new_run
   # key = fleet_key
   # plotdir = plotdir
   # write_scalars = T
@@ -630,6 +633,10 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
                                         run = new_run,
                                         key = key)
   
+  # what if the runs have different length? filter the longest to have the same time steps as the shortest
+  max_ts <- min(max(unique(catch_nc_old$ts)), max(unique(catch_nc_new$ts)))
+  catch_nc_old <- catch_nc_old %>% filter(ts <= max_ts)
+  catch_nc_new <- catch_nc_new %>% filter(ts <= max_ts)
   
   # get residuals (it gets hazy for proportions - what's a big residual and how do you translate that to catch?)
   catch_diff <- catch_nc_old %>%
@@ -646,7 +653,7 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
   catch_diff_long %>%
     filter(Name %in% to_plot) %>%
     ggplot()+
-    geom_line(aes(x = ts, y = mt, color = run), linewidth = 1.5)+
+    geom_point(aes(x = ts, y = mt, color = run), size = 1.5)+
     facet_wrap(~Name, scales = "free")
   
   ggsave(paste0(plotdir, "/", new_run, "_vs_", old_run, ".png"), width = 10, height = 8)
@@ -681,7 +688,7 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
   # view
   
   catch_diff2 %>%
-    filter(ts == 1, Name %in% to_plot) %>% # 15 just as test
+    filter(ts == 1, Name %in% to_plot) %>%
     ggplot()+
     geom_sf(aes(fill = residual_mt))+
     scale_fill_viridis()+
@@ -760,7 +767,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
     
     # average of end of the run
     catch_nc_end <- catch_nc_new %>%
-      filter(ts > (max(ts)-5)) %>%
+      filter(ts > (max(ts)-5)) %>% # NOTE: if your run is less than 5 years, you'll be using an average of however many years you have
       group_by(box_id, Name) %>%
       summarize(mt = mean(mt)) %>%
       ungroup() %>%
@@ -851,7 +858,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
     
     tot_atlantis <- catch_nc_new %>%
       filter(fleet != "background", fleet != "Canada") %>%
-      filter(ts > (max(ts)-5)) %>%
+      filter(ts > (max(ts)-5)) %>% # NOTE: if your run is less than 5 years, you'll be using an average of however many years you have
       group_by(box_id, fleet, Name) %>%
       summarize(mt = mean(mt)) %>% # mean over last 5 years
       ungroup() %>%
@@ -904,7 +911,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
     # Now produce spatial plots but fleet-by-fleet
     # model output
     catch_nc_end <- catch_nc_new %>%
-      filter(ts > (max(ts)-5)) %>% # keep last 5 years of run
+      filter(ts > (max(ts)-5)) %>% # keep last 5 years of run # NOTE: if your run is less than 5 years, you'll be using an average of however many years you have
       group_by(box_id, Name, fleet) %>%
       summarize(mt = mean(mt)) %>% # means across last 5 years
       group_by(box_id, fleet) %>%
@@ -922,7 +929,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
       left_join(grps %>% select(Code,Name), by = c("spp"="Code")) %>%
       select(year, box_id, Name, fleet, weight_mton) %>%
       mutate(weight_mton = replace_na(weight_mton, 0)) %>%
-      filter(year >= (max(year)-5)) %>%
+      filter(year > (max(year)-5)) %>%
       group_by(box_id, Name, fleet) %>%
       summarize(mt = mean(weight_mton)) %>% # averages over time
       group_by(box_id, fleet) %>%
@@ -1043,7 +1050,7 @@ plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_ru
     
     # average of end of the run
     catch_nc_end <- catch_nc_new %>%
-      filter(ts > (max(ts)-5)) %>%
+      filter(ts > (max(ts)-5)) %>% # NOTE: if your run is less than 5 years, you'll be using an average of however many years you have
       filter(box_id < 92) %>% # keep AK only
       group_by(fleet, Name) %>%
       summarize(mt = mean(mt)) %>%
@@ -1130,7 +1137,7 @@ plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_ru
     
     # average of end of the run
     catch_nc_end <- catch_nc_new %>%
-      filter(ts > (max(ts)-5)) %>%
+      filter(ts > (max(ts)-5)) %>% # NOTE: if your run is less than 5 years, you'll be using an average of however many years you have
       filter(box_id < 92) %>% # keep AK only
       group_by(fleet, Name) %>%
       summarize(mt = mean(mt)) %>%
