@@ -37,6 +37,7 @@ rewrite_codes <- function(original_string){
 #' @param catch catch reconstruction by fleet from Adam
 #' @param do_boundary TRUE/FALSE do you want to turn the catch in boundary boxes to 0?
 #' @param do_islands TRUE/FALSE do you want to redistribute the catch in island boxes to neighboring boxes based on catch proportions in the neighbors?
+#' @param do_canada TRUE/FALSE do you want to reallocate catch from the BC boxes to AK boxes?
 #'
 #' @description 
 #' Takes catch reconstruction and it modifies the catch values in boundary boxes and island boxes
@@ -50,7 +51,7 @@ rewrite_codes <- function(original_string){
 #' 
 #' 
 
-prepare_catch_data <- function(catch_dat, do_boundary = FALSE, do_islands = FALSE){
+prepare_catch_data <- function(catch_dat, do_boundary = FALSE, do_islands = FALSE, do_canada = FALSE){
   
   fleets <- catch_dat
   
@@ -64,6 +65,14 @@ prepare_catch_data <- function(catch_dat, do_boundary = FALSE, do_islands = FALS
       ungroup()
     
   }
+  
+  # handle Canada
+  # Catch from BC boxes is negligible and is due to a simple spatial mismatch
+  # drop it for simplicity
+  fleets <- fleets %>%
+    rowwise() %>%
+    mutate(weight_mton = ifelse(box_id > 91, 0, weight_mton)) %>%
+    ungroup()
   
   # handle islands: attribute catch from an island box to its neighbors based on the existing catch props
   if(do_islands){
@@ -543,7 +552,7 @@ build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, 
   ts_idx <- 1:length(ts) # create indices numbered from 1
   catch_nc_df <- catch_nc_df %>% filter(ts %in% ts_idx) # filter the catch data based on whole years
   
-
+  
   catch_nc_df <- catch_nc_df %>%
     select(ts, box_id, Name, fleet, mt)
   
@@ -757,6 +766,16 @@ plot_total_catch <- function(nc_old, nc_new, fleet_struc = F, relative = F, old_
 
 plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, key, plotdir, write_scalars = F, catch_data = catch_data, by_species = T){
   
+  # nc_old = catch_nc_file_old
+  # nc_new = catch_nc_file_new
+  # fleet_struc = T
+  # relative = T
+  # old_run = old_run
+  # new_run = new_run
+  # key = fleet_key
+  # plotdir = plotdir
+  # by_species = T
+  
   if(by_species){
     
     catch_nc_new <- build_catch_output_v2(catch_nc = nc_new, 
@@ -785,7 +804,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
       group_by(year, box_id, Name) %>%
       summarise(mt = sum(weight_mton)) %>% # sum up across fleets
       ungroup() %>%
-      filter(year > (max(year)-5)) %>%
+      filter(year > (max(year)-10)) %>% # using last 10 years to avoid recent shifts in spatial footprints
       group_by(box_id, Name) %>%
       summarize(mt = mean(mt)) %>%
       ungroup()
@@ -829,6 +848,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
       if(this_fg %in% unique(catch_diff$Name)){
         print(paste("doing", this_fg))
         
+        # plot prop by box
         catch_diff %>%
           filter(Name == this_fg) %>%
           ggplot()+
@@ -838,6 +858,28 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
           labs(title = this_fg)+
           facet_grid(Name~Type)
         ggsave(paste0(plotdir, "/spatial/species/data_vs_", new_run, this_fg, ".png"), width = 8, height = 4)
+        
+        # plot ratio between props (prop_model / prop_data)
+        # to avoid big outliers from boxes that have a negligible contribution to the catch, limit this to Prop > 0.01 (1% of the catch)
+        catch_diff %>%
+          filter(Name == this_fg) %>%
+          pivot_wider(names_from = Type, values_from = Prop) %>%
+          mutate(ratio = model / data) %>%
+          rowwise() %>% # if BOTH model and data are small, drop their ratio
+          mutate(ratio = ifelse(model < 0.01 & data < 0.01, NA, ratio)) %>%
+          ungroup() %>%
+          ggplot()+
+          geom_sf(aes(fill = ratio))+
+          scale_fill_gradient2(
+            low = "blue",
+            mid = "white",
+            high = "red",
+            midpoint = 0
+          ) +
+          theme_bw()+
+          labs(title = this_fg, fill = "Prop model / prop data")
+        ggsave(paste0(plotdir, "/spatial/species/RATIO_data_vs_", new_run, this_fg, ".png"), width = 8, height = 4)
+        
         
       }
       
@@ -881,9 +923,9 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
       group_by(year, fleet) %>%
       summarise(mt = sum(weight_mton)) %>% # sum up across boxes and species
       ungroup() %>%
-      filter(year > (max(year)-5)) %>% # keep last 5 years of data
+      filter(year > (max(year)-10)) %>% # keep last 10 years of data
       group_by(fleet) %>%
-      summarize(mt = mean(mt)) %>% # average over last 5 years
+      summarize(mt = mean(mt)) %>% # average over last 10 years # using last 10 years to avoid recent shifts in spatial footprints
       ungroup() %>%
       mutate(tot = sum(mt), # total catch
              prop = mt / tot) %>%
@@ -986,6 +1028,27 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
         labs(title = this_fleet_name)
       ggsave(paste0(plotdir, "/spatial/fleet/data_vs_", new_run, this_fleet, ".png"), width = 8, height = 4)
       
+      # plot ratio between props (prop_model / prop_data)
+      # to avoid big outliers from boxes that have a negligible contribution to the catch, limit this to Prop > 0.01 (1% of the catch)
+      catch_diff_sf %>%
+        filter(fleet == this_fleet) %>%
+        pivot_wider(names_from = Type, values_from = Prop) %>%
+        mutate(ratio = model / data) %>%
+        rowwise() %>% # if BOTH model and data are small, drop their ratio
+        mutate(ratio = ifelse(model < 0.01 & data < 0.01, NA, ratio)) %>%
+        ungroup() %>%
+        ggplot()+
+        geom_sf(aes(fill = ratio))+
+        scale_fill_gradient2(
+          low = "blue",
+          mid = "white",
+          high = "red",
+          midpoint = 0
+        ) +        theme_bw()+
+        labs(title = this_fleet_name, fill = "Prop model / prop data")
+      ggsave(paste0(plotdir, "/spatial/fleet/RATIO_data_vs_", new_run, this_fleet, ".png"), width = 8, height = 4)
+      
+      
     }
     
     if(write_scalars){
@@ -1069,9 +1132,9 @@ plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_ru
       group_by(year, fleet, Name) %>%
       summarise(mt = sum(weight_mton)) %>% # sum up across boxes
       ungroup() %>%
-      filter(year > (max(year)-5)) %>%
+      filter(year > (max(year)-10)) %>% # using last 10 years to avoid recent shifts in spatial footprints
       group_by(fleet, Name) %>%
-      summarize(mt = mean(mt)) %>% # mean of last 5 years
+      summarize(mt = mean(mt)) %>% # mean of last 10 years
       ungroup()
     
     # add missing combinations
@@ -1156,7 +1219,7 @@ plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_ru
       group_by(year, fleet, Name) %>%
       summarise(mt = sum(weight_mton)) %>% # sum up across boxes
       ungroup() %>%
-      filter(year > (max(year)-5)) %>%
+      filter(year > (max(year)-10)) %>% # using last 10 years to avoid recent shifts in spatial footprints
       group_by(fleet, Name) %>%
       summarize(mt = mean(mt)) %>%
       ungroup()
@@ -1213,8 +1276,6 @@ plot_catch_composition <- function(nc_new, fleet_struc = T, relative = T, new_ru
   
 }
 
-
-
 # Calibration functions ---------------------------------------------------
 
 
@@ -1233,6 +1294,11 @@ calibrate_mfc_total <- function(harvest_old, harvest_new, scalars){
     
     # new vec
     mfc_new_vec <- mfc_old_vec * this_scalar
+    
+    # do a check - what F do these equate to? After calibration these could be very very high
+    check_f <- sum(-365 * log(1 - mfc_new_vec))
+    print(paste("Group: ", this_code, ", Scalar: ", this_scalar, ", F: ", check_f))
+    
     # skip entry for BC fleet (entry 24)
     mfc_new_vec[24] <- mfc_old_vec[24]
     mfc_new <- paste(as.character(mfc_new_vec), collapse = " ")
