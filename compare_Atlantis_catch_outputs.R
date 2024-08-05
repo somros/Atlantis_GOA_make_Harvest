@@ -210,3 +210,45 @@ catch_comp_nc <- catch_nc_TOT %>%
 summary(catch_comp_nc$ratio)
 
 # the two nc files are identical in their reported catch by box
+
+# So, conclusions for now are that:
+# CatchPerFishery.txt and CATCH.nc contain the same catch by fleet FOR NON-MIGRATING SPECIES
+# CATCH.nc and CATCHTOT.nc contain the same information per box
+
+# Where does this leave us? is CATCH.nc safe to use, at least for non-migrating species?
+# I guess we can't say that... Dig deeper into this with Isaac
+# If the text file is the truth, let's compare the CATCHTOT.nc file to that, aka forget about the fleets
+# This would allow us to make a matching key species-box-port, maybe, which is what we need in the end
+
+
+# Compare CATCHTOT.nc to txt ----------------------------------------------
+# This is a comparison of total catch, because CATCHTOT.nc does not hold fleet information
+
+catch_comp_2 <- catch_txt %>%
+  group_by(year, Code) %>%
+  summarize(mt = sum(mt, na.rm = T)) %>%
+  left_join(grps %>% select(Code, Name)) %>%
+  filter(Name %in% unique(catch_nc_TOT$Name)) %>%
+  left_join(catch_nc_TOT %>%
+              rename(year = ts) %>%
+              group_by(year, Name) %>%
+              summarise(mt = sum(mt, na.rm=T)),
+            by = c('year','Name')) %>%
+  mutate(ratio = mt.x / mt.y)
+
+summary(catch_comp_2$ratio)
+
+# these are not identical, but fairly close for most. Exceptions are, as usual, migrating species
+# So:
+# 1. CatchPerFishery.txt is the truth, but it does not have info by box
+# 2. Catch per fleet per species is comparable between CATCH.nc (FC variables) and CatchPerFishery.txt, but only for non-migrating species
+# 3. Catch per box per species is identical between CATCH.nc and CATCHTOT.nc
+# 4. Total catch per species is comparable between CATCHTOT.nc and CatchPerFishery.txt, but not for migrating species
+
+# There is no txt file with information by box, therefore groundtruthing the spatial information in the NC files is impossible
+# Apart from that, discrepancies concern migrating species
+
+# For the purpose of creating a key boxes to ports, which NC file should we rely on?
+# Should we just accept that reported catch by box is not reliable in any output?
+# Question for Isaac. For now, make a key box-species-port from Adam's data, and use that to check outputs from CATCHTOT.nc (that is, remove the fleet layer)
+ 

@@ -183,7 +183,7 @@ for(i in 1:length(all_fleets)){
 # Produce MPAYY vectors ---------------------------------------------------
 # start from a prm we have
 file_path <- "data/"
-bg_harvest_file <- paste0(file_path, "GOA_harvest_fleets_v2.prm") # mFC is apportioned to fleets but MPAYYY are still undefined
+bg_harvest_file <- paste0(file_path, "GOA_harvest_fleets_v2_10YR.prm") # mFC is apportioned to fleets but MPAYYY are still undefined
 goa_fleets_file <- paste0(file_path, "GOA_fisheries.csv")
 
 # read in
@@ -226,7 +226,7 @@ fleet_codes <- c(unique(fleets_spatial$fleet_code), "Canada")
 # In either case, the realized catch out of that box will be a function of not only MPAYYY but also the spatial distributions of the fished species
 # This means that every case will need calibration of mFC
 
-access_case <- 3
+access_case <- 2
 
 for(i in 1:length(fleet_codes)){
   this_f <- fleet_codes[i]
@@ -314,7 +314,7 @@ for(i in 1:length(fleet_codes)){
 }
 
 # write out
-writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_CASE3.prm")
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets_mpa_CASE2_10YR.prm")
 
 # Make a dummy MPA harvest file where the MPA vectors are all 1 -----------
 # This has the purpose of testing if the MPA machinery works in Atlantis
