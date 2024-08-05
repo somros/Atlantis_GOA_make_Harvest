@@ -55,6 +55,9 @@ prepare_catch_data <- function(catch_dat, do_boundary = FALSE, do_islands = FALS
   
   fleets <- catch_dat
   
+  # first drop a few rows with box_id = NA
+  fleets <- fleets %>% filter(!is.na(box_id))
+  
   # zero-out BBs (TODO: thinks if this makes sense)
   if(do_boundary){
     
@@ -592,6 +595,75 @@ build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, 
   
 }
 
+#' Reads bio and catch nc files for a specific run
+#'
+#' @param catch_nc_tot path to the CATCHTOT.nc NetCDF file
+#' @param run number of calibration run
+#'
+#' @description 
+#' 1. Reads CATCHTOT.nc files for a specific run
+#' 2. Extracts catch output per cell (in t)
+#' @return data frame with catch information in space per species
+#' @export
+#' 
+#' 
+#' 
+
+build_catch_output_TOT <- function(catch_nc_tot, run){
+  
+  this_tidync <- tidync(catch_nc_tot)
+  this_nc <- ncdf4::nc_open(catch_nc_tot)
+  
+  catch_nc_tot_ls <- list()
+  
+  for(n in 1:length(all_fg)){
+    fg <- all_fg[n] # this needs to use the "Name" to pull from the NC file
+    code <- grps %>% filter(Name == fg) %>% pull(Code)
+    
+    #Extract from the output .nc file the appropriate catch time series variables
+    catch_vars <- this_tidync %>%
+      activate("D1,D0") %>%
+      hyper_vars() %>% # all variables in the .nc file active grid
+      filter(grepl("Tot_.*_Catch",name)) %>% # filter for reserve N
+      filter(grepl(code,name)) # filter for specific functional group
+    
+    catch <- purrr::map(catch_vars$name,ncdf4::ncvar_get,nc=this_nc) 
+    
+    catch_df <- as.data.frame((catch))
+    
+    # add box_id
+    catch_df <- catch_df %>% mutate(box_id = 0:108)
+    
+    # reshape
+    catch_df_long <- catch_df %>%
+      pivot_longer(-box_id, names_to = "ts", values_to = "mt")
+    
+    # turn ts column to integer
+    catch_df_long <- catch_df_long %>%
+      mutate(ts = gsub("X","",ts)) %>%
+      mutate(ts = as.numeric(ts)) %>%
+      mutate(ts = ts - 1) # start numbering ts from 0
+    
+    catch_box_df <- catch_df_long
+    
+    # drop ts = 0
+    catch_box_df <- catch_box_df %>%
+      filter(ts > 0)
+    
+    # add species
+    catch_box_df <- catch_box_df %>%
+      mutate(Name = fg,
+             Code = code)
+    
+    catch_nc_tot_ls[[n]] <- catch_box_df
+    
+  }
+  
+  catch_nc_TOT <- bind_rows(catch_nc_tot_ls)
+  
+  return(catch_nc_TOT)
+}
+
 
 # Plotting functions ------------------------------------------------------
 
@@ -874,7 +946,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
             low = "blue",
             mid = "white",
             high = "red",
-            midpoint = 0
+            midpoint = 1
           ) +
           theme_bw()+
           labs(title = this_fg, fill = "Prop model / prop data")
@@ -1043,7 +1115,7 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
           low = "blue",
           mid = "white",
           high = "red",
-          midpoint = 0
+          midpoint = 1
         ) +        theme_bw()+
         labs(title = this_fleet_name, fill = "Prop model / prop data")
       ggsave(paste0(plotdir, "/spatial/fleet/RATIO_data_vs_", new_run, this_fleet, ".png"), width = 8, height = 4)
