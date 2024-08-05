@@ -46,7 +46,7 @@ fleets_prop <- fleets_tot %>%
 # say average 2015-2020
 # This assumes that proportional effects of different fleets is time-invariant: pot caught x% of cod in 2020, so it will in 2080, so it did in 1995.
 fleets_prop_term <- fleets_prop %>%
-  filter(year >= 2015, year <= 2020) %>%
+  filter(year >= 2011, year <= 2020) %>% # use the decade 2011-2020
   group_by(spp, fleet) %>%
   summarise(prop = mean(prop, na.rm = T)) %>%
   ungroup()
@@ -64,7 +64,7 @@ fleets_prop_term %>%
   theme_bw()
 
 # write this out
-# write.csv(fleets_prop_term, "data/mFC_prop_by_fleet.csv", row.names = F)
+write.csv(fleets_prop_term, "data/mFC_prop_by_fleet_10YR.csv", row.names = F)
 
 # Apply to background mFC -------------------------------------------------
 
@@ -223,4 +223,4 @@ for(i in 1:length(fg_codes)) {
 }
 
 # write out the new prm
-writeLines(bg_harvest, con = "data/GOA_harvest_fleets_v2.prm")
+writeLines(bg_harvest, con = "data/GOA_harvest_fleets_v2_10YR.prm")
