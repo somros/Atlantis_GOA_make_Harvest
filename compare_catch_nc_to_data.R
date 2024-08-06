@@ -126,7 +126,10 @@ data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_fil
 # nc file
 catch_nc_file_TOT <- paste0(data_dir, "/out_", new_run, "/outputGOA0", new_run, "_testTOTCATCH.nc") # full nc catch file
 
-plot_port_catch(nc_tot = catch_nc_file_TOT, run = new_run, key = box_port_key)
+plot_port_catch(nc_tot = catch_nc_file_TOT, 
+                run = new_run, 
+                key = box_port_key,
+                plotdir = plotdir)
 
 # Catch composition comparison plots --------------------------------------
 

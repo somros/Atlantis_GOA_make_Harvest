@@ -609,10 +609,10 @@ build_catch_output_v2 <- function(catch_nc, bio_nc, fleet_struc, relative, run, 
 #' 
 #' 
 
-build_catch_output_TOT <- function(catch_nc_tot, run){
+build_catch_output_TOT <- function(nc_tot, run){
   
-  this_tidync <- tidync(catch_nc_tot)
-  this_nc <- ncdf4::nc_open(catch_nc_tot)
+  this_tidync <- tidync(nc_tot)
+  this_nc <- ncdf4::nc_open(nc_tot)
   
   catch_nc_tot_ls <- list()
   
@@ -1146,11 +1146,23 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
   
 }
 
-plot_port_catch <- function(nc_tot, run, key){
-  
-  # nc_tot <- catch_nc_file_TOT
-  # run <- new_run
-  # key <- box_port_key
+#' Compares catch compositions by species and fleet from the nc file of one Atlantis run and from the data. 
+#'
+#' @param nc_tot path to the netcdf file of the new run
+#' @param run number of previous run
+#' @param key the fisheries.csv file from Atlantis 
+#' @param plotdir path to the directory where the output plots will be stored
+#' 
+#' @description 
+#' Extracts catch output from Atlantis CATCHTOT.nc files from one model run and compares it with data. 
+#' It performs comparisons of catch composition by port.
+#' It is set up to operate on relative catch distributions rather than raw tonnage.
+#' It will produce bar charts.
+#' @return NA
+#' @export
+#' 
+
+plot_port_catch <- function(nc_tot, run, key, plotdir){
   
   # preliminaries: compute catch by port in the data
   # total catch by port

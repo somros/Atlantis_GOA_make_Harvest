@@ -142,61 +142,71 @@ catch_by_port %>%
   ggplot()+
   geom_bar(aes(x = Port.Name, y = prop), stat = "identity", position = "stack")+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-  
+
 # Apportion catch ---------------------------------------------------------
 # now let's take a test run and apportion it based on the key
 # this will need to become a function that writes out plots
 # use the CATCHTOT.nc file here (no txt file exists with spatial catch output)
 
-box_port_key <- readRDS("data/box_to_port_key.RDS")
-
-run <- 1574 
-data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/" # directory with the Atlantis runs
-
-# nc file
-catch_nc_file_TOT <- paste0(data_dir, "/out_", run, "/outputGOA0", run, "_testTOTCATCH.nc") # full nc catch file
-
-catch_tot <- build_catch_output_TOT(catch_nc_file_TOT, run = run)
-
-# drop BC
-catch_tot <- catch_tot %>% filter(box_id < 92)
-
-# tie in the port key and perform operations
-catch_mapped <- full_join(catch_tot, box_port_key %>% select(-mean_mt)) %>%
-  mutate(mt_new = mt * mean_prop) %>% # get catch to each port by box and species
-  group_by(ts, Name, Code, Port.Name, Port.Code) %>%
-  summarise(mt_tot_port = sum(mt_new)) %>% # drop boxes
-  group_by(ts, Name, Code) %>%
-  mutate(mt_tot = sum(mt_tot_port, na.rm =T)) %>%
-  ungroup() %>%
-  mutate(prop = mt_tot_port / mt_tot)
-
-# view
-catch_mapped %>%
-  slice_max(ts) %>%
-  filter(Code == "POL", prop > 0.001) %>%
-  mutate(Port.Name = fct_reorder(Port.Name, prop, .desc = T)) %>%
-  ggplot()+
-  geom_bar(aes(x = Port.Name, y = prop), stat = "identity", position = "stack")+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-# set up comparison plot
-tt <- catch_mapped %>%
-  rename(prop_out = prop) %>%
-  select(-mt_tot_port,-mt_tot) %>%
-  left_join(catch_by_port %>%
-              rename(prop_in = prop) %>%
-              select(-mean_mt_port, -mt_tot), 
-            by = c('Code','Port.Name','Port.Code')) %>%
-  pivot_longer(c(prop_in, prop_out), names_to = "type", values_to = "prop")
-
-tt %>%
-  slice_max(ts) %>%
-  filter(Code == "POL", prop > 0.001) %>%
-  mutate(Port.Name = fct_reorder(Port.Name, prop, .desc = T)) %>%
-  ggplot()+
-  geom_bar(aes(x = Port.Name, y = prop, fill = type), stat = "identity", position = "dodge")+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-
-# Now put these into a function so that it is done for all species in a run
+# box_port_key <- readRDS("data/box_to_port_key.RDS")
+# 
+# run <- 1574 
+# data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/" # directory with the Atlantis runs
+# 
+# # nc file
+# catch_nc_file_TOT <- paste0(data_dir, "/out_", run, "/outputGOA0", run, "_testTOTCATCH.nc") # full nc catch file
+# 
+# catch_tot <- build_catch_output_TOT(catch_nc_file_TOT, run = run)
+# 
+# # drop BC
+# catch_tot <- catch_tot %>% filter(box_id < 92)
+# 
+# # tie in the port key and perform operations
+# catch_mapped <- full_join(catch_tot, key %>% select(-mean_mt)) 
+# 
+# # there are several NA's that appear from these joint. They include:
+# # 1. Groups not in the data reconstruction (FOS)
+# # 2. Boundary boxes, such as box 2
+# # 3. Invertebrates
+# # Need to look a bit deeper into this, for now scratch these
+# catch_mapped <- catch_mapped[complete.cases(catch_mapped),]
+# 
+# # tie in the port key and perform operations
+# catch_mapped <- catch_mapped %>%
+#   mutate(mt_new = mt * mean_prop) %>% # get catch to each port by box and species
+#   group_by(ts, Name, Code, Port.Name, Port.Code) %>%
+#   summarise(mt_tot_port = sum(mt_new)) %>% # drop boxes
+#   group_by(ts, Name, Code) %>%
+#   mutate(mt_tot = sum(mt_tot_port, na.rm =T)) %>%
+#   ungroup() %>%
+#   mutate(prop = mt_tot_port / mt_tot)
+# 
+# # view
+# catch_mapped %>%
+#   slice_max(ts) %>%
+#   filter(Code == "POL", prop > 0.001) %>%
+#   mutate(Port.Name = fct_reorder(Port.Name, prop, .desc = T)) %>%
+#   ggplot()+
+#   geom_bar(aes(x = Port.Name, y = prop), stat = "identity", position = "stack")+
+#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+# 
+# # set up comparison plot
+# tt <- catch_mapped %>%
+#   rename(prop_out = prop) %>%
+#   select(-mt_tot_port,-mt_tot) %>%
+#   left_join(catch_by_port %>%
+#               rename(prop_in = prop) %>%
+#               select(-mean_mt_port, -mt_tot), 
+#             by = c('Code','Port.Name','Port.Code')) %>%
+#   pivot_longer(c(prop_in, prop_out), names_to = "type", values_to = "prop")
+# 
+# tt %>%
+#   slice_max(ts) %>%
+#   filter(Code == "POL", prop > 0.001) %>%
+#   mutate(Port.Name = fct_reorder(Port.Name, prop, .desc = T)) %>%
+#   ggplot()+
+#   geom_bar(aes(x = Port.Name, y = prop, fill = type), stat = "identity", position = "dodge")+
+#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+# 
+# 
+# # Now put these into a function so that it is done for all species in a run
