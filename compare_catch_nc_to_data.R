@@ -115,6 +115,19 @@ scalars <- plot_spatial_catch(nc_new = catch_nc_file_new,
 # calibrate_mfc_total(harvest_old, harvest_new, scalars) # this may lead to total catches that are too high or too low
 
 
+# Catch by port comparison plots ------------------------------------------
+# view catch by port as model output compared to catch reconstruction (last 10 year average)
+# This hinges on the matching key built in make_box_to_port_key.R
+# read in matching key
+box_port_key <- readRDS("data/box_to_port_key.RDS")
+
+data_dir <- "C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/" # directory with the Atlantis runs
+
+# nc file
+catch_nc_file_TOT <- paste0(data_dir, "/out_", new_run, "/outputGOA0", new_run, "_testTOTCATCH.nc") # full nc catch file
+
+plot_port_catch(nc_tot = catch_nc_file_TOT, run = new_run, key = box_port_key)
+
 # Catch composition comparison plots --------------------------------------
 
 # Check that catch split by fleet is similar to the data

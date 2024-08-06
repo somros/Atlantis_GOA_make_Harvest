@@ -1146,6 +1146,81 @@ plot_spatial_catch <- function(nc_new, fleet_struc = F, relative = F, new_run, k
   
 }
 
+plot_port_catch <- function(nc_tot, run, key){
+  
+  # nc_tot <- catch_nc_file_TOT
+  # run <- new_run
+  # key <- box_port_key
+  
+  # preliminaries: compute catch by port in the data
+  # total catch by port
+  catch_by_port <- key %>%
+    group_by(Code, Port.Code, Port.Name) %>%
+    summarize(mean_mt_port = sum(mean_mt, na.rm = T)) %>% # drop boxes
+    group_by(Code) %>%
+    mutate(mt_tot = sum(mean_mt_port, na.rm = T)) %>% # get total
+    ungroup() %>%
+    mutate(prop = mean_mt_port / mt_tot) # get proportion by port
+   
+  catch_by_port$prop[is.nan(catch_by_port$prop)] <- 0 # NaN to 0
+  
+  # read in CATCHTOT.nc file
+  catch_nc_tot <- build_catch_output_TOT(catch_nc = nc_tot, run = run)
+  
+  # drop BC, the data is only for AK
+  catch_tot <- catch_tot %>% filter(box_id < 92)
+  
+  # tie in the port key and perform operations
+  catch_mapped <- full_join(catch_tot, key %>% select(-mean_mt)) 
+  
+  # there are several NA's that appear from these joint. They include:
+  # 1. Groups not in the data reconstruction (FOS)
+  # 2. Boundary boxes, such as box 2
+  # 3. Invertebrates
+  # Need to look a bit deeper into this, for now scratch these
+  catch_mapped <- catch_mapped[complete.cases(catch_mapped),]
+  
+  # now perform operations
+  catch_mapped <- catch_mapped %>%
+    mutate(mt_new = mt * mean_prop) %>% # get catch to each port by box and species
+    group_by(ts, Name, Code, Port.Name, Port.Code) %>%
+    summarise(mt_tot_port = sum(mt_new)) %>% # drop boxes
+    group_by(ts, Name, Code) %>%
+    mutate(mt_tot = sum(mt_tot_port, na.rm =T)) %>% # get total across ports
+    ungroup() %>%
+    mutate(prop = mt_tot_port / mt_tot) # get proportion by port
+  
+  # set up comparison plot
+  in_vs_out <- catch_mapped %>%
+    rename(prop_out = prop) %>%
+    select(-mt_tot_port,-mt_tot) %>%
+    left_join(catch_by_port %>%
+                rename(prop_in = prop) %>%
+                select(-mean_mt_port, -mt_tot), 
+              by = c('Code','Port.Name','Port.Code')) %>%
+    pivot_longer(c(prop_in, prop_out), names_to = "type", values_to = "prop")
+  
+  # loop over fg's
+  all_fg <- unique(in_vs_out$Name)
+  
+  for(i in 1:length(all_fg)){
+    
+    this_name <- all_fg[i]
+    
+    p_port <- in_vs_out %>%
+      slice_max(ts) %>% # for now this is based on the last ts
+      filter(Name == this_name, prop > 0.001) %>%
+      mutate(Port.Name = fct_reorder(Port.Name, prop, .desc = T)) %>%
+      ggplot()+
+      geom_bar(aes(x = Port.Name, y = prop, fill = type), stat = "identity", position = "dodge")+
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+      labs(title = this_name)
+    ggsave(paste0(plotdir, "/spatial/port/", this_name, "_data_vs_", new_run, ".png"), p_port, width = 10, height = 8)
+    
+  }
+  
+}
+
 # TODO: the args of this are identical to the one above - These should all be the same function
 
 #' Compares catch compositions by species and fleet from the nc file of one Atlantis run and from the data. 
