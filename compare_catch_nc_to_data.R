@@ -48,6 +48,51 @@ source("catch_compare_functions.R")
 # handle the catch reconstruction
 catch_data <- prepare_catch_data(catch_dat = catch_dat, do_boundary = TRUE, do_islands = TRUE)
 
+# # check hal
+# hal <- catch_data %>%
+#   filter(spp == "HAL", port == "Discard") %>%
+#   group_by(year, port) %>%
+#   summarise(mt = sum(weight_mton)) %>%
+#   group_by(year) %>%
+#   mutate(mt_tot = sum(mt)) %>%
+#   ungroup() %>%
+#   mutate(prop = mt / mt_tot)
+# 
+# hal %>%
+#   filter(port == "Discard") %>%
+#   ggplot(aes(x = year, y = prop, fill = port))+
+#   geom_bar(stat = "identity", position="dodge")
+#   
+# # check sbf
+# sbf <- catch_data %>%
+#   filter(spp == "SBF") %>%
+#   group_by(year, port) %>%
+#   summarise(mt = sum(weight_mton)) %>%
+#   group_by(year) %>%
+#   mutate(mt_tot = sum(mt)) %>%
+#   ungroup() %>%
+#   mutate(prop = mt / mt_tot)
+# 
+# sbf %>%
+#   filter(port == "Discard") %>%
+#   ggplot(aes(x = year, y = prop, fill = port))+
+#   geom_bar(stat = "identity", position="dodge")
+# 
+# data <- data.frame(
+#   Year = c(2019, 2019, 2019, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2022, 2023, 2023, 2023),
+#   Gear_Type = c("HAL", "POT", "TRW", "HAL", "POT", "TRW", "HAL", "POT", "TRW", "HAL", "POT", "TRW", "HAL", "POT", "TRW"),
+#   Retained_GOA = c(7187, 1876, 1139, 4954, 4614, 1088, 3723, 9647, 1142, 3234, 13493, 1354, 2288, 10995, 1106),
+#   Discarded_GOA = c(626, 632, 1268, 440, 136, 1243, 354, 193, 460, 400, 155, 527, 267, 53, 302)
+# ) 
+# 
+# data <- data %>%
+#   group_by(Year) %>%
+#   summarise(d = sum(Discarded_GOA),
+#             r = sum(Retained_GOA)) %>%
+#   mutate(prop = d / (d+r))
+# 
+# print(data)
+
 # which groups do you want to view in the plot comparisons?
 to_plot <- c("Pollock","Cod","Arrowtooth_flounder","Flatfish_shallow","Flatfish_deep","Rex_sole","Flathead_sole","Pacific_ocean_perch","Sablefish","Halibut")
 # which fleets do you want to see?

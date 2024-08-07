@@ -1177,13 +1177,13 @@ plot_port_catch <- function(nc_tot, run, key, plotdir){
   catch_by_port$prop[is.nan(catch_by_port$prop)] <- 0 # NaN to 0
   
   # read in CATCHTOT.nc file
-  catch_nc_tot <- build_catch_output_TOT(catch_nc = nc_tot, run = run)
+  catch_nc_tot <- build_catch_output_TOT(nc_tot = nc_tot, run = run)
   
   # drop BC, the data is only for AK
-  catch_tot <- catch_tot %>% filter(box_id < 92)
+  catch_nc_tot <- catch_nc_tot %>% filter(box_id < 92)
   
   # tie in the port key and perform operations
-  catch_mapped <- full_join(catch_tot, key %>% select(-mean_mt)) 
+  catch_mapped <- full_join(catch_nc_tot, key %>% select(-mean_mt)) 
   
   # there are several NA's that appear from these joint. They include:
   # 1. Groups not in the data reconstruction (FOS)
@@ -1225,9 +1225,10 @@ plot_port_catch <- function(nc_tot, run, key, plotdir){
       mutate(Port.Name = fct_reorder(Port.Name, prop, .desc = T)) %>%
       ggplot()+
       geom_bar(aes(x = Port.Name, y = prop, fill = type), stat = "identity", position = "dodge")+
-      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-      labs(title = this_name)
-    ggsave(paste0(plotdir, "/spatial/port/", this_name, "_data_vs_", new_run, ".png"), p_port, width = 10, height = 8)
+      theme_bw()+
+      theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust=1))+
+      labs(title = this_name, x = "", y = "Proportion of total catch")
+    ggsave(paste0(plotdir, "/spatial/port/", this_name, "_data_vs_", new_run, ".png"), p_port, width = 8, height = 6)
     
   }
   
