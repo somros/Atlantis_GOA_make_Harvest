@@ -1,0 +1,263 @@
+---
+title: "TAC/ABC Ratio Analysis in EBS and GOA"
+author: "Alberto Rovellini"
+date: "01/09/2025"
+format: 
+  html:
+    self-contained: true
+    code-fold: true
+    toc: true
+execute:
+  warning: false
+  message: false
+---
+
+## Overview
+
+This analysis explores the Total Allowable Catch (TAC) to Acceptable Biological Catch (ABC) ratio in the Eastern Bering Sea (EBS) and Gulf of Alaska (GOA) fisheries. The analysis is based on harvest specification data from AKFIN.
+
+## Setup
+
+Load libraries.
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+```
+
+## Gulf of Alaska Analysis
+
+The data is stored in an Excel file with harvest specifications from 1986 to 2024.
+
+```{r goa-data}
+# read in GOA
+goa_specs <- read_xlsx("data/GOA_harvest specs_1986-2024.xlsx", 
+                       sheet = 1, 
+                       range = "A3:DO131",
+                       col_names = F) 
+
+# set names for columns
+yrs <- 2024:1986
+tags <- paste(c("OFL","ABC","TAC"),rep(yrs,each=3),sep="_")
+colnames(goa_specs) <- c("Stock","Area",tags)
+
+# Clean up data by removing asterisks and commas
+goa_specs <- goa_specs %>%
+  mutate(across(!c(Stock,Area), ~{
+    x <- ifelse(tolower(.) %in% c("n/a", "n/a"), NA, .)
+    x <- gsub("\\*", "", x)
+    x <- gsub(",", "", x)
+    as.numeric(x)
+  }))
+
+# Fill stock names and reshape data
+goa_specs <- goa_specs %>%
+  fill(Stock, .direction = "down")
+
+goa_specs_long <- goa_specs %>%
+  pivot_longer(-c(Stock,Area), names_to = "Var_Year", values_to = "mt") %>%
+  separate(col = Var_Year,
+           into = c("Var", "Year"),
+           sep = "_") %>%
+  mutate(Year = as.numeric(Year))
+
+# Filter for total GOA and calculate ratios
+goa_specs_tot <- goa_specs_long %>% 
+  filter(Area == "Total", Var %in% c("ABC","TAC")) %>%
+  drop_na() %>%
+  mutate(Area = "GOA")
+
+goa_ratio <- goa_specs_tot %>%
+  pivot_wider(id_cols = c(Stock,Area,Year), names_from = Var, values_from = mt) %>%
+  mutate(ratio = TAC/ABC)
+```
+
+Let's visualize the TAC/ABC ratios for GOA:
+
+```{r goa-plot}
+#| fig-width: 8
+#| fig-height: 8
+goa_ratio %>%
+  ggplot(aes(x = Year, y = ratio)) +
+  geom_line(linewidth = 1) +
+  theme_bw() +
+  facet_wrap(~Stock, ncol = 3) +
+  labs(title = "TAC/ABC Ratios in Gulf of Alaska",
+       y = "TAC/ABC Ratio",
+       x = "Year")
+```
+
+## Bering Sea Analysis
+
+Some stocks have specifications for BSAI (Bering Sea and Aleutian Islands combined), while others have separate specifications for BS and AI.
+
+```{r bsai-data}
+bsai_specs <- read_xlsx("data/BSAI_harvest specs_1986-2024.xlsx", 
+                       sheet = 1, 
+                       range = "A3:GO57",
+                       col_names = F) 
+
+# Set column names
+yrs <- 2024:1986
+tags <- paste(c("OFL","ABC","TAC", "iTAC", "CDQ"),rep(yrs,each=5),sep="_")
+colnames(bsai_specs) <- c("Stock","Area",tags)
+
+# Clean data
+bsai_specs <- bsai_specs %>%
+  mutate(across(!c(Stock,Area), ~{
+    x <- ifelse(tolower(.) %in% c("n/a", "n/a"), NA, .)
+    x <- gsub("\\*", "", x)
+    x <- gsub(",", "", x)
+    as.numeric(x)
+  })) %>%
+  fill(Stock, .direction = "down")
+
+# Separate and rejoin data for different areas
+bsai_1 <- bsai_specs %>%
+  filter(Stock %in% c("Pollock","Pacific cod","Sablefish")) %>%
+  filter(Area %in% c("BS","AI")) 
+
+bsai_2 <- bsai_specs %>%
+  filter(!Stock %in% c("Pollock","Pacific cod","Sablefish")) %>%
+  filter(Area == "BSAI")
+
+bsai_specs <- rbind(bsai_1,bsai_2)
+
+# Reshape and calculate ratios
+bsai_specs_long <- bsai_specs %>%
+  pivot_longer(-c(Stock,Area), names_to = "Var_Year", values_to = "mt") %>%
+  separate(col = Var_Year,
+           into = c("Var", "Year"),
+           sep = "_") %>%
+  mutate(Year = as.numeric(Year))
+
+bsai_specs_tot <- bsai_specs_long %>% 
+  filter(Var %in% c("ABC","TAC")) %>%
+  drop_na() 
+
+bsai_ratio <- bsai_specs_tot %>%
+  pivot_wider(id_cols = c(Stock,Area,Year), names_from = Var, values_from = mt) %>%
+  mutate(ratio = TAC/ABC)
+```
+
+Visualize the BSAI ratios:
+
+```{r bsai-plot}
+#| fig-width: 8
+#| fig-height: 12
+bsai_ratio %>%
+  ggplot(aes(x = Year, y = ratio, color = Area)) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  scale_color_manual(values = c("#2E86AB", "#F24236", "#F5B700")) +
+  theme_bw() +
+  facet_wrap(~Stock, ncol = 3) +
+  labs(title = "TAC/ABC Ratios in Bering Sea/Aleutian Islands",
+       y = "TAC/ABC Ratio",
+       x = "Year")
+```
+
+## Comparing GOA and BSAI
+
+Now let's compare the two regions for key stocks that appear in both regions (though the names of some stock complexes are not consistent between FMPs):
+
+```{r comparison}
+#| fig-width: 8
+#| fig-height: 8
+# Define common species
+sp <- c(
+  intersect(unique(goa_ratio$Stock), unique(bsai_ratio$Stock)),
+  "Rock Sole",
+  "Yellowfin Sole",
+  "Shallow-water Flatfish",
+  "Deep-water Flatfish",
+  "Rex Sole"
+)
+
+# Combine and filter data
+ak_ratio <- rbind(goa_ratio,bsai_ratio) %>%
+  filter(Stock %in% sp)
+
+# Create comparison plot
+ak_ratio %>%
+  filter(Area != "AI") %>%
+  ggplot(aes(x = Year, y = ratio, color = Area)) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  scale_color_manual(values = c("#2E86AB", "#F24236", "#F5B700", "#8F7CAF")) +
+  scale_y_continuous(limits = c(0,1)) +
+  geom_hline(yintercept = 0.5, color = "black", linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Year", 
+       y = "TAC/ABC",
+       title = "TAC/ABC Ratios Comparison Between Regions") +
+  facet_wrap(~Stock, ncol = 3)
+```
+
+### Recent Trends (Post-2010)
+
+Zooming in on the more recent period:
+
+```{r recent-trends}
+#| fig-width: 8
+#| fig-height: 8
+ak_ratio %>%
+  filter(Year > 2010) %>%
+  filter(Area != "AI") %>%
+  ggplot(aes(x = Year, y = ratio, color = Area)) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  scale_color_manual(values = c("#2E86AB", "#F24236", "#F5B700", "#8F7CAF")) +
+  scale_y_continuous(limits = c(0,1)) +
+  geom_hline(yintercept = 0.5, color = "black", linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Year", 
+       y = "TAC/ABC",
+       title = "TAC/ABC Ratios Comparison Between Regions") +
+  facet_wrap(~Stock, ncol = 3)
+```
+
+## Plot TAC and ABC for the GOA
+
+```{r raw-specs-goa}
+#| fig-width: 8
+#| fig-height: 10
+goa_specs_tot %>%   
+  ggplot(aes(x = Year, y = mt, color = Var))+   
+  geom_line(size = 1.5, alpha = 0.7)+   
+  scale_color_manual(values = c("#2E86AB", "#F24236")) +  
+  theme_bw() +
+  facet_wrap(~Stock, ncol = 3, scales = 'free') +
+  labs(x = "Year", 
+       y = "mt",
+       title = "TAC and ABC in the GOA") 
+```
+
+## Patterns
+
+### BSAI Region
+
+Some examples:
+
+-   Pollock in BS: Ratio fluctuates between 50% and 100% since 2010
+-   Pacific Cod in BS: Nearly 100%
+-   Sablefish: High (near 100%) but declining in recent years
+-   Arrowtooth Flounder: Consistently low (\<25%)
+-   Pacific Ocean Perch: Relatively high (\>80%)
+-   Yellowfin sole: \>60%
+-   Rock sole: \<40% but increasing
+
+### GOA Region
+
+Some examples:
+
+-   Pollock: Consistently 100%
+-   Pacific Cod: Stable at \~75% (State of Alaska allocation?)
+-   Sablefish: High but declining (high recruitment)
+-   Pacific Ocean Perch, Northern rockfish, shortraker, Rex sole, Deep water flatfish: 100%
+-   Arrowtooth Flounder: Increasing to \>75%
+-   Shallow water flatfish: 80%
+-   Flathead: Increasing
+
+## Conclusion
+
+TAC/ABC ratios are generally higher in the GOA compared to BSAI. In the few cases where TAC \< ABC, most of the times it is flatfish. Notably, of this TAC, attainment is very low for some stocks (e.g. 3% for deep water flatfish).\
+\
+In ACLIM models ATTACH is used to go ABC -\> TAC -\> catch in two steps using a series of regressions. These are trained on harvest specification data from 1992-2017 (perhaps updated now), while accounting for changes in management (e.g. Amendment 80, Steller sea lion closures, etc.).
