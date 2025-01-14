@@ -216,10 +216,35 @@ ak_ratio %>%
 
 ## Plot TAC and ABC for the GOA
 
+Other way to view this. For the BSAI first.
+
+```{r raw-specs-ebs}
+#| fig-width: 8
+#| fig-height: 12
+# for_plot_bsai <- c("Pollock", "Pacific cod" , "Sablefish", "Yellowfin Sole", "Greenland Turbot", "Arrowtooth Flounder", "Kamchatka Flounder", "Rock Sole", "Flathead Sole", "Pacific Ocean Perch", "Northern Rockfish", "Alaska Plaice")
+
+bsai_specs_tot %>%   
+  #filter(Stock %in% for_plot_bsai) %>%
+  filter(Area %in% c("BS","BSAI")) %>%
+  ggplot(aes(x = Year, y = mt, color = Var))+   
+  geom_line(size = 1.5, alpha = 0.7)+   
+  scale_color_manual(values = c("#2E86AB", "#F24236")) +  
+  theme_bw() +
+  facet_wrap(~Stock, ncol = 3, scales = 'free') +
+  labs(x = "Year", 
+       y = "mt",
+       title = "TAC and ABC in the GOA") 
+```
+
+And then for the GOA.
+
 ```{r raw-specs-goa}
 #| fig-width: 8
-#| fig-height: 10
+#| fig-height: 12
+#for_plot_goa <- c("Pollock", "Pacific cod", "Sablefish", "Shallow-water Flatfish", "Deep-water Flatfish",  "Arrowtooth Flounder", "Flathead Sole", "Pacific Ocean Perch", "Rex Sole")
+
 goa_specs_tot %>%   
+  #filter(Stock %in% for_plot_goa) %>%
   ggplot(aes(x = Year, y = mt, color = Var))+   
   geom_line(size = 1.5, alpha = 0.7)+   
   scale_color_manual(values = c("#2E86AB", "#F24236")) +  
