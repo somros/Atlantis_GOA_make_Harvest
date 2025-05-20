@@ -135,6 +135,7 @@ goa_specs_tot %>%
 
 # Compute Catch/TAC for OY weights ----------------------------------------
 # First need to map species in this data to the Atlantis groups
+# Should this be TAC/ABC? Or Catch/ABC?
 
 grp <- read.csv("data/GOA_Groups.csv")
 
@@ -156,3 +157,9 @@ catch_to_tac <- goa_specs_tot_catch %>%
   pivot_wider(names_from = Var, values_from = mean_mt) %>%
   mutate(prop = Catch / TAC) %>%
   arrange(-prop)
+
+# Case 1: weights are a simple progression from least to most valuable, or a linear transformation thereof
+wgts <- catch_to_tac %>%
+  arrange(prop) %>%
+  select(Code,Name,prop) %>%
+  mutate(w = row_number())
