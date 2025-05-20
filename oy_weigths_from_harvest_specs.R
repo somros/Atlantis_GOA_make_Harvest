@@ -155,11 +155,23 @@ catch_to_tac <- goa_specs_tot_catch %>%
   ungroup() %>%
   filter(Var %in% c("TAC","Catch")) %>%
   pivot_wider(names_from = Var, values_from = mean_mt) %>%
-  mutate(prop = Catch / TAC) %>%
-  arrange(-prop)
+  mutate(w = Catch / TAC) %>%
+  arrange(-w)
 
 # Case 1: weights are a simple progression from least to most valuable, or a linear transformation thereof
-wgts <- catch_to_tac %>%
-  arrange(prop) %>%
-  select(Code,Name,prop) %>%
+wgts1 <- catch_to_tac %>%
+  arrange(w) %>%
+  select(Code,Name,w) %>%
   mutate(w = row_number())
+
+# Case 2: organize species into target and by-catch (aka high vs low value, or binary choice)
+key_targ <- data.frame("Code" = catch_to_tac$Code,
+                       "is_target" = c(1,1,1,1,0,1,1,0,1,1,1,0,0,0,0,0,0,0)) # assuming flatfish is not targeted, which is incorrect
+
+wgts2 <- catch_to_tac %>%
+  left_join(key_targ, by = "Code") %>%
+  rowwise() %>%
+  mutate(w = ifelse(is_target > 0, 10,1)) %>%
+  ungroup() %>%
+  select(Code,Name,w) %>%
+  arrange(-w)
