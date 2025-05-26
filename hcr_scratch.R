@@ -12,8 +12,11 @@
 
 library(tidyverse)
 
+grps <- read.csv("data/GOA_Groups.csv")
+codes <- grps %>% pull(Code)
+
 # pick runs
-runs <- c(1914,2014,2015)
+runs <- c(2060, 2061, 2064, 2065, 2066, 2067)
 
 spp <- c("POL","COD","POP") # these are the species to look at for the catch, biomass, and HCR plots
 oy_spp <- "POL" # these are the species in the OY cap
@@ -44,7 +47,80 @@ key_config <- set_key(runs)
 
 
 
-# 
+# function to extract HCR-related info
+hcr_spp <- c("POL","COD","POP")
+
+hcr_tests <- function(this_run){
+  
+  wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
+  biom_file <- paste0("outputGOA0", this_run, "_testAgeBiomIndx.txt")
+  catch_file <- paste0("outputGOA0", this_run, "_testCatch.txt")
+  harvest_prm <- list.files(wd)[grep("GOA_harvest_.*.prm", list.files(wd))]
+  
+  biom <- read.csv(paste(wd, biom_file, sep = "/"), sep = " ", header = T)
+  catch <- read.csv(paste(wd, catch_file, sep = "/"), sep = " ", header = T)
+  harvest <- readLines(paste(wd, harvest_prm, sep = "/"))
+  
+  # get spp that are managed with the HCRs
+  hcr_spp <- c()
+  for(sp in codes){
+    # Look for "tierXX\t" pattern to match the tab-delimited format
+    pattern <- paste0("tier", sp, "\t")
+    matches <- harvest[grep(pattern, harvest, fixed = TRUE)]
+    if(length(matches) > 0) {
+      tier <- as.numeric(gsub("[^0-9]", "", matches[1]))
+      if(tier > 0){hcr_spp <- c(hcr_spp, sp)}
+    }
+  }
+  
+  for(sp in hcr_spp){
+    
+    sp_idx <- grep(sp, codes)
+    
+    # get start age for selex
+    startage <- as.numeric(unlist(strsplit(harvest[grep(paste0(sp, "_mFC_startage"), harvest)+1], split = " ")))[1]
+    
+    # get estbo
+    estbo_vec <- as.numeric(unlist(strsplit(harvest[grep("estBo\t", harvest)+1], split = " ")))
+    estbo <- estbo_vec[sp_idx]
+    
+    # get Fref
+    fref_vec <- as.numeric(unlist(strsplit(harvest[grep("Fref\t", harvest)+1], split = " ")))
+    fref <- -log(1 - fref_vec[sp_idx]) # turn to real F as there were entered as mu
+    
+    #biom <- biom %>% select(Time, POL) %>% rename(biom_mt = POL)
+    # selected biomass
+    biom_selex <- biom %>%
+      pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
+      separate(`Code.Age`, into = c("Code", "Age"), sep = "\\.") %>%
+      filter(Code == sp) %>%
+      filter(Age >= startage) %>%
+      group_by(Time) %>%
+      summarise(biom_mt_selex = sum(mt))
+    
+    # total biomass for B/B0
+    biom_tot <- biom %>%
+      pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
+      separate(`Code.Age`, into = c("Code", "Age"), sep = "\\.") %>%
+      filter(Code == sp) %>%
+      group_by(Time) %>%
+      summarise(biom_mt_tot = sum(mt))
+    
+    catch <- catch %>% select(Time, all_of(sp)) %>% rename(catch_mt = sp)
+    
+    tmp <- left_join(biom_selex, catch, by = "Time") %>% 
+      left_join(biom_tot, by = "Time") %>%
+      #filter(Time > 365, Time < max(Time)) %>% # drop first 2 and last time step
+      mutate(mu = catch_mt / biom_mt_selex,
+             run = this_run,
+             biom_frac = biom_mt_tot / estbo)
+    
+  }
+  
+  
+  
+  return(tmp)
+}
 
 
 
