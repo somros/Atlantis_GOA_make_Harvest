@@ -15,42 +15,51 @@ library(tidyverse)
 grps <- read.csv("data/GOA_Groups.csv")
 codes <- grps %>% pull(Code)
 
-# pick runs
-runs <- c(2060, 2061, 2064, 2065, 2066, 2067)
+# species and fleets
+# pull these from a reference OY run - comparing them makes sense only if all species are consistent
+ref_run <- 2060
+oy_dir <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", ref_run)
+harvest_prm <- list.files(oy_dir)[grep("GOA_harvest_.*.prm", list.files(oy_dir))]
+harvest <- readLines(paste(wd, harvest_prm, sep = "/"))
+cap_vec <- as.numeric(unlist(strsplit(harvest[grep("FlagSystCapSP", harvest)+1], split = " ")))
+oy_species <- codes[which(cap_vec>0)]
 
-spp <- c("POL","COD","POP") # these are the species to look at for the catch, biomass, and HCR plots
-oy_spp <- "POL" # these are the species in the OY cap
+oy_fleets <- "background" # manually set this, it will just be bg for the foreseeable future
 
-# combine all possible factors in a label key
+# Run properties ----------------------------------------------------------
+# Still debating on the best way to do this - typing in here or reading in an excel sheet. Pros and cons to both
+# model runs
+run <- c(2060, 2061, 2064, 2065, 2066, 2067)
 
-# key 
-# this probaby needs manual setup
+# caps
+cap <- c(400, 200, 600, 400, 200, 600) * 1000
 
-set_key <- function(runs, cap = NULL, wgts = NULL, gamma = NULL, climate = NULL, other = NULL) {
+# weight scheme
+wgts <- c(rep("equal", 3), rep("binary", 3))
+
+# combine all run factors in a label key
+set_key <- function(run, cap = NULL, wgts = NULL, env = NULL, other = NULL) { # gamma = NULL, 
   # Get the length of run vector
-  n <- length(runs)
+  n <- length(run)
   
   # Set defaults for all arguments except run
   if (is.null(cap)) cap <- rep(NA, n)
   if (is.null(wgts)) wgts <- rep(NA, n)
-  if (is.null(gamma)) gamma <- rep(NA, n)
-  if (is.null(climate)) climate <- rep(NA, n)
-  if (is.null(other)) other <- rep(NA, n)
+  #if (is.null(gamma)) gamma <- rep(NA, n) # this is only useful for HCR shape 5
+  if (is.null(env)) env <- rep(NA, n)
+  if (is.null(other)) other <- rep(NA, n) # this could be rec devs or or off, etc
   
-  key_config <- data.frame(runs, cap, wgts, gamma, climate, other)
+  key_config <- data.frame(run, cap, wgts, env, other) # gamma, 
   return(key_config)
   
 }
 
-key_config <- set_key(runs)
+key_config <- set_key(run, cap, wgts)
 
 
 
-
-# function to extract HCR-related info
-hcr_spp <- c("POL","COD","POP")
-
-hcr_tests <- function(this_run){
+# function to extract fishery info for stocks that are part of the OY
+pull_fishery_info <- function(this_run){
   
   wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
   biom_file <- paste0("outputGOA0", this_run, "_testAgeBiomIndx.txt")
@@ -73,22 +82,32 @@ hcr_tests <- function(this_run){
     }
   }
   
-  for(sp in hcr_spp){
+  res_df <- data.frame()
+  for(sp in oy_species){
     
     sp_idx <- grep(sp, codes)
     
     # get start age for selex
     startage <- as.numeric(unlist(strsplit(harvest[grep(paste0(sp, "_mFC_startage"), harvest)+1], split = " ")))[1]
     
-    # get estbo
-    estbo_vec <- as.numeric(unlist(strsplit(harvest[grep("estBo\t", harvest)+1], split = " ")))
-    estbo <- estbo_vec[sp_idx]
+    # reference points: pull them from PRM if the species is managed with an HCR
+    estbo <- NA
+    if(sp %in% hcr_spp){
+      # get estbo
+      estbo_vec <- as.numeric(unlist(strsplit(harvest[grep("estBo\t", harvest)+1], split = " ")))
+      estbo <- estbo_vec[sp_idx]
+      
+      # get Fref
+      fref_vec <- as.numeric(unlist(strsplit(harvest[grep("Fref\t", harvest)+1], split = " ")))
+      fref <- -log(1 - fref_vec[sp_idx]) # turn to real F as there were entered as mu
+      
+    } else { # fref for non-HCR species is from mFC
+      
+      fref <- as.numeric(unlist(strsplit(harvest[grep(paste0("mFC_",sp," "), harvest)+1], split = " ")))[1]
+      
+    }
     
-    # get Fref
-    fref_vec <- as.numeric(unlist(strsplit(harvest[grep("Fref\t", harvest)+1], split = " ")))
-    fref <- -log(1 - fref_vec[sp_idx]) # turn to real F as there were entered as mu
-    
-    #biom <- biom %>% select(Time, POL) %>% rename(biom_mt = POL)
+    # biomass and catch
     # selected biomass
     biom_selex <- biom %>%
       pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
@@ -106,65 +125,53 @@ hcr_tests <- function(this_run){
       group_by(Time) %>%
       summarise(biom_mt_tot = sum(mt))
     
-    catch <- catch %>% select(Time, all_of(sp)) %>% rename(catch_mt = sp)
+    # catch
+    catch_sp <- catch %>% select(Time, all_of(sp)) %>% rename(catch_mt = sp)
     
-    tmp <- left_join(biom_selex, catch, by = "Time") %>% 
+    # put it all together
+    tmp <- left_join(biom_selex, catch_sp, by = "Time") %>% 
       left_join(biom_tot, by = "Time") %>%
       #filter(Time > 365, Time < max(Time)) %>% # drop first 2 and last time step
-      mutate(mu = catch_mt / biom_mt_selex,
-             run = this_run,
-             biom_frac = biom_mt_tot / estbo)
+      mutate(mu = catch_mt / biom_mt_selex, # selected exploitation rate
+             f = -log(1-mu), # selected F, as emerging from Atlantis
+             biom_frac = biom_mt_tot / estbo, # biomass fraction, computed with total biomass because that is what Atlantis uses by default
+             fref = fref,
+             Code = sp,
+             run = this_run)
+    
+    res_df <- rbind(res_df, tmp)
     
   }
   
-  
-  
-  return(tmp)
+  return(res_df)
 }
 
+catch_df <- bind_rows(lapply(run, pull_fishery_info))
+
+
+# plots
+# merge all into a function
+
+# total catch against cap
+
+# by species, biom fraction (need B0), f fraction, catch, biomass (selected), exploitation rate, ...?
+
+# for HCR species only: HCR plots
 
 
 
 
 
 
-label_key <- data.frame("run" = all_runs,
-                        "cap" = c(this_cap))
-
-# pull total catch of the oy species
-plot_catch <- function(this_run){
-  
-  wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
-  catch_file <- paste0("outputGOA0", this_run, "_testCatch.txt")
-  
-  catch <- read.csv(paste(wd, catch_file, sep = "/"), sep = " ", header = T)
-  
-  catch <- catch %>% select(Time, all_of(oy_species))
-  
-  # pivot
-  catch_long <- catch %>%
-    pivot_longer(-Time, names_to = "Species", values_to = "mt")
-  
-  # add up
-  catch_sum <- catch_long %>%
-    group_by(Time) %>%
-    mutate(tot_mt = sum(mt)) %>% 
-    ungroup() %>%
-    mutate(run = this_run)
-  
-  return(catch_sum)
-}
-
-catch_df <- bind_rows(lapply(all_runs, plot_catch)) %>%
-  left_join(label_key, by = "run")
 
 
-# aff climate key if relevant
 
 
-# order species
-catch_df$Species <- factor(catch_df$Species, levels = oy_species)
 
+
+
+
+ 
 # plot all
 p1 <- catch_df %>%
   filter(Time >= 50*365, Time <= 100*365) %>%
