@@ -45,13 +45,19 @@ for(sp in codes){
 # Run properties ----------------------------------------------------------
 # Still debating on the best way to do this - typing in here or reading in an excel sheet. Pros and cons to both
 # model runs
-run <- c(2060, 2061, 2064, 2065, 2066, 2067)
+#run <- c(2060, 2061, 2064, 2065, 2066, 2067, 2072, 2073, 2074, 2075)
+run <- c(2072, 2073, 2074, 2075, 2080, 2081, 2082, 2083)
 
 # caps
-cap <- c(400, 200, 600, 400, 200, 600) * 1000
+#cap <- c(400, 200, 600, 400, 200, 600, NA, 400, 200, 600) * 1000
+cap <- rep(c(NA, 400, 200, 600), 2) * 1000
 
 # weight scheme
-wgts <- c(rep("equal", 3), rep("binary", 3))
+#wgts <- c(rep("equal", 3), rep("binary", 4), rep("ramp", 3))
+wgts <- c(rep("ramp", 8))
+
+# climate forcings
+env <- c(rep(1999, 4), rep("2014", 4))
 
 # combine all run factors in a label key
 set_key <- function(run, cap = NULL, wgts = NULL, env = NULL, other = NULL) { # gamma = NULL, 
@@ -70,9 +76,7 @@ set_key <- function(run, cap = NULL, wgts = NULL, env = NULL, other = NULL) { # 
   
 }
 
-key_config <- set_key(run, cap, wgts)
-
-
+key_config <- set_key(run, cap, wgts, env)
 
 # function to extract fishery info for stocks that are part of the OY
 pull_fishery_info <- function(this_run){
@@ -196,17 +200,18 @@ plot_fishery <- function(catch_df){
   p1 <- catch_df %>%
     group_by(Time,run,cap,wgts,env,other) %>%
     summarise(catch_tot = sum(catch_mt)) %>%
-    ggplot(aes(x = Time/365, y = catch_tot, color = factor(cap), shape = wgts))+
+    ggplot(aes(x = Time/365, y = catch_tot, color = factor(cap), shape = factor(env)))+
     geom_point()+
-    scale_shape_manual(values = c(1,2))+
+    scale_shape_manual(values = c(1:length(unique(catch_df$env))))+
     geom_hline(aes(yintercept = cap), linetype = "dashed")+
     theme_bw()+
     scale_y_continuous(limits = c(0,NA))+
     labs(x = "Year", 
          y = "Total catch (mt)",
          color = "Cap",
-         shape = "Weight scheme",
-         title = "Total catch")
+         shape = "Environment",
+         title = "Total catch")+
+    facet_grid(~wgts)
 
   ggsave(paste0(plotdir, "/", "oy_tot.png"), p1, 
          width = 8, height = 5,  
@@ -223,16 +228,16 @@ plot_fishery <- function(catch_df){
     p_tmp <- catch_df %>%
       filter(Code == current_code) %>%
       mutate(f_frac = f / fref) %>%
-      select(-fref) %>%
+      select(-fref, -biom_mt_tot, -biom_mt_selex, -mu) %>%
       pivot_longer(-c(Time, Code, Name, run, cap, wgts, env, other)) %>%
-      ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = wgts)) +
+      ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(env))) +
       geom_line() +
-      facet_wrap(~ name, scales = "free_y") +
+      facet_grid2(wgts ~ name, scales = "free_y", independent = "y") +
       labs(title = current_name,
            x = "Year", 
            y = "",
            color = "Cap",
-           linetype = "Weight scheme") +
+           linetype = "Environment") +
       theme_bw() +
       theme(
         plot.title = element_text(hjust = 0.5, size = 12),
@@ -247,27 +252,37 @@ plot_fishery <- function(catch_df){
   }
   
   # for HCR species only: HCR plots
-  p2 <- catch_df %>%
-    filter(Code %in% hcr_spp, Time >= 10*365) %>%
-    ggplot(aes(x = biom_frac, y = f, color = Time/365))+
-    geom_point(aes(shape = factor(wgts)), size = 2)+
-    scale_shape_manual(values = c(1,2))+
-    scale_color_viridis_c(option = "inferno")+
-    geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 1)+
-    geom_vline(xintercept = 0.02, linetype = "dashed", color = "red", linewidth = 1)+
-    geom_vline(xintercept = 0.2, linetype = "dotted", color = "orange", linewidth = 1)+
-    geom_hline(aes(yintercept = fref), linetype = "dashed", linewidth = 1, color = "steelblue")+
-    scale_y_continuous(limits = c(0,NA))+
-    theme_bw()+
-    labs(x = "B/B0", 
-         y = "F", 
-         color = "Year",
-         shape = "Weight scheme")+
-    facet_grid(Name~cap)
   
-  ggsave(paste0(plotdir, "/", "hcr.png"), p2, 
-         width = 8, height = 5, 
-         units = "in", dpi = 300)
+  for(i in seq_along(hcr_spp)){
+    
+    current_code <- hcr_spp[i]
+    current_name <- grps %>% filter(Code == current_code) %>% pull(Name)
+    
+    # TODO: sort out faceting - you want the interesting feature to be in the same panel (e.g., facet by weight scheme or by climate scenario?)
+    p2 <- catch_df %>%
+      filter(Code == current_code, Time >= 10*365) %>%
+      ggplot(aes(x = biom_frac, y = f, color = Time/365))+
+      geom_point(aes(shape = factor(wgts)), size = 2)+
+      scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+      scale_color_viridis_c(option = "inferno")+
+      geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 1)+
+      geom_vline(xintercept = 0.02, linetype = "dashed", color = "red", linewidth = 1)+
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "orange", linewidth = 1)+
+      geom_hline(aes(yintercept = fref), linetype = "dashed", linewidth = 1, color = "steelblue")+
+      scale_y_continuous(limits = c(0,NA))+
+      theme_bw()+
+      labs(x = "B/B0", 
+           y = "F", 
+           color = "Year",
+           shape = "Weight scheme")+
+      facet_grid(factor(env)~cap)
+    
+    ggsave(paste0(plotdir, "/", "hcr.png"), p2, 
+           width = 8, height = 5, 
+           units = "in", dpi = 300)
+    
+  }
+  
   
   # ecocap rescaling
   p3 <- catch_df %>%
