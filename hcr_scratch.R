@@ -123,6 +123,11 @@ pull_fishery_info <- function(this_run){
     startage_line <- harvest[grep(paste0(sp, "_mFC_startage"), harvest) + 1]
     startage <- as.numeric(strsplit(startage_line, split = " ")[[1]])[1]
     
+    # get weight
+    idx <- grep(sp, grps %>% pull(Code))
+    w_line <- harvest[grep("SystCapSPpref", harvest) + 1]
+    w <- as.numeric((strsplit(w_line, split = " "))[[1]])[idx]
+    
     if(sp %in% hcr_spp) {
       sp_idx <- grep(sp, codes)
       estbo_vec <- as.numeric(strsplit(harvest[grep("estBo\t", harvest) + 1], split = " ")[[1]])
@@ -136,7 +141,7 @@ pull_fishery_info <- function(this_run){
       fref <- -(365) * log(1 - mfc)
     }
     
-    harvest_params[[sp]] <- list(startage = startage, estbo = estbo, fref = fref)
+    harvest_params[[sp]] <- list(startage = startage, w = w, estbo = estbo, fref = fref)
   }
   
   # Process all species at once using vectorized operations
@@ -144,11 +149,12 @@ pull_fishery_info <- function(this_run){
   biom_selex_all <- biom_filtered %>%
     left_join(
       data.frame(Code = names(harvest_params),
-                 startage = sapply(harvest_params, `[[`, "startage")),
+                 startage = sapply(harvest_params, `[[`, "startage"),
+                 w = sapply(harvest_params, `[[`, "w")),
       by = "Code"
     ) %>%
     filter(Age >= startage) %>%
-    group_by(Time, Code) %>%
+    group_by(Time, Code, w) %>%
     summarise(biom_mt_selex = sum(mt), .groups = 'drop')
   
   biom_tot_all <- biom_filtered %>%
@@ -180,7 +186,7 @@ pull_fishery_info <- function(this_run){
     result_list[[sp]] <- sp_data
   }
   
-  # OPTIMIZATION 7: Single rbind instead of iterative rbind
+  # Single rbind instead of iterative rbind
   res_df <- do.call(rbind, result_list)
   
   # Process ecocap report
@@ -206,6 +212,19 @@ catch_df <- catch_df %>%
   left_join(key_config, by = "run") %>%
   left_join(grps %>% select(Code, Name), by = "Code")
 
+# get preferred species given a certain weighting scheme
+# using > mean(w) here in an attempt to automate the choice
+pref <- catch_df %>%
+  select(Code, w, wgts) %>%
+  distinct() %>%
+  group_by(wgts) %>%
+  mutate(mean_w = mean(w)) %>%
+  rowwise() %>%
+  mutate(pref = ifelse(w>=mean_w,1,0))%>%
+  ungroup()%>%
+  filter(pref>0)%>%
+  select(Code,wgts,pref)
+
 # Plots -------------------------------------------------------------------
 
 plot_fishery <- function(catch_df){
@@ -222,24 +241,29 @@ plot_fishery <- function(catch_df){
   
   # total catch against cap
   p1 <- catch_df %>%
+    filter(!is.na(catch_mt)) %>%
     group_by(Time,run,cap,wgts,env,other) %>%
-    summarise(catch_tot = sum(catch_mt)) %>%
-    ggplot(aes(x = Time/365, y = catch_tot, color = factor(cap), shape = factor(env)))+
+    summarise(catch_tot = sum(catch_mt),
+              biom_tot = sum(biom_mt_selex)) %>%
+    ungroup() %>%
+    pivot_longer(-c(Time:other)) %>%
+    ggplot(aes(x = Time/365, y = value, color = factor(cap), shape = factor(wgts)))+
     geom_point()+
-    scale_shape_manual(values = c(1:length(unique(catch_df$env))))+
+    scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     geom_hline(aes(yintercept = cap), linetype = "dashed")+
     theme_bw()+
     scale_y_continuous(limits = c(0,NA))+
     labs(x = "Year", 
-         y = "Total catch (mt)",
-         color = "Cap",
-         shape = "Environment",
-         title = "Total catch")+
-    facet_grid(~wgts)
+         y = "mt",
+         color = "Cap (mt)",
+         shape = "Weight scheme",
+         title = "")+
+    facet_grid(name~env, scales = "free_y")
 
   ggsave(paste0(plotdir, "/", "oy_tot.png"), p1, 
-         width = 8, height = 5,  
+         width = 12, height = 6,  
          units = "in", dpi = 300)
+
   
   # by species, biom fraction (need B0), f fraction, catch, biomass (selected), exploitation rate, ...?
   # maybe it would be best to produce this plot one species at a time
@@ -322,33 +346,45 @@ plot_fishery <- function(catch_df){
          width = 8, height = 24, 
          units = "in", dpi = 300)
   
+  # catch of preferred species vs biomass of all species
+  # first get catch of preferred species for each scenario
+  pref_catch <- catch_df %>%
+    filter(!is.na(catch_mt)) %>%
+    left_join(pref, by = c("Code","wgts")) %>%
+    filter(pref==1) %>%
+    group_by(Time,run,cap,wgts,env)%>%
+    summarise(catch_mt = sum(catch_mt))
+  
+  # then biom tot, join, plot
+  p4 <- catch_df %>%
+    filter(!is.na(catch_mt), Time > 10*365) %>%
+    group_by(Time,run,cap,wgts,env)%>%
+    summarise(biom_mt_tot = sum(biom_mt_tot)) %>%
+    left_join(pref_catch) %>%
+    ggplot(aes(x=catch_mt, y = biom_mt_tot, color = factor(cap), shape = factor(wgts)))+
+    geom_point()+
+    scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+    scale_x_continuous(limits = c(0,NA))+
+    scale_y_continuous(limits = c(0,NA))+
+    labs(x = "Catch of preferred species (mt)",
+         y = "Biomass of all OY species (mt)",
+         color = "Cap (mt)",
+         shape = "Weight scheme")+
+    theme_bw()+
+    facet_wrap(~env)
+  
+  ggsave(paste0(plotdir, "/", "catch_vs_biomass.png"), p4, 
+         width = 10, height = 5, 
+         units = "in", dpi = 300)
+  
+  
 }
 
-plot_fishery(catch_df_fast)
+plot_fishery(catch_df)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# OLD CODE
 # Plot total biomass ------------------------------------------------------
 # pull total catch of the oy species
 plot_biom <- function(this_run){
