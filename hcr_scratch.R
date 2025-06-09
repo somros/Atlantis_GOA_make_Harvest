@@ -277,17 +277,17 @@ plot_fishery <- function(catch_df){
       filter(Code == current_code) %>%
       filter(!is.na(catch_mt)) %>%
       mutate(f_frac = f / fref) %>%
-      select(-fref, -biom_mt_tot, -biom_mt_selex, -mu) %>%
+      select(-fref, -biom_mt_tot, -biom_mt_selex, -mu, -w) %>%
       pivot_longer(-c(Time, Code, Name, run, cap, wgts, env, other)) %>%
-      ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(env))) +
+      ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(wgts))) +
       geom_line() +
       scale_y_continuous(limits = c(0,NA)) +
-      facet_grid2(wgts ~ name, scales = "free_y", independent = "y") +
+      facet_grid2(env ~ name, scales = "free_y", independent = "y") +
       labs(title = current_name,
            x = "Year", 
            y = "",
-           color = "Cap",
-           linetype = "Environment") +
+           color = "Cap (mt)",
+           linetype = "Weight scheme") +
       theme_bw() +
       theme(
         plot.title = element_text(hjust = 0.5, size = 12),
@@ -324,7 +324,8 @@ plot_fishery <- function(catch_df){
       labs(x = "B/B0", 
            y = "F/Ftarg", 
            color = "Year",
-           shape = "Weight scheme")+
+           shape = "Weight scheme",
+           title = current_name)+
       facet_grid(factor(env)~cap)
     
     ggsave(paste0(plotdir, "/", current_code, "_hcr.png"), p2, 
@@ -377,11 +378,72 @@ plot_fishery <- function(catch_df){
          width = 10, height = 5, 
          units = "in", dpi = 300)
   
+  # image relating POL to ATF somehow
+  pol <- catch_df %>%
+    filter(Code == "POL") %>%
+    select(Time, biom_mt_selex, catch_mt, f, run, cap:env) %>%
+    rename(biom_pol = biom_mt_selex,
+           catch_pol = catch_mt,
+           f_pol = f)
+  
+  atf <- catch_df %>%
+    filter(Code == "ATF") %>%
+    select(Time, biom_mt_selex, catch_mt, f, run, cap:env) %>%
+    rename(biom_atf = biom_mt_selex,
+           catch_atf = catch_mt,
+           f_atf = f)
+  
+  pol_vs_atf <- pol %>%
+    left_join(atf) %>%
+    mutate(f_ratio = f_atf / f_pol)
+  
+  p5 <- pol_vs_atf %>%
+    filter(!is.na(f_ratio)) %>%
+    filter(Time > 365*10) %>%
+    ggplot(aes(x = biom_atf, y = biom_pol, color = f_ratio, shape = factor(wgts)))+
+    geom_point(aes(shape = factor(wgts)), size = 2)+
+    scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+    viridis::scale_color_viridis(option = "inferno", begin = 0.05, end = 0.95)+
+    theme_bw()+
+    scale_x_continuous(limits = c(0,NA), labels = scales::scientific)+
+    scale_y_continuous(limits = c(0,NA), labels = scales::scientific)+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    labs(x = "Arrowtooth selected biomass (mt)",
+         y = "Pollock selected biomass (mt)",
+         shape = "Weight scheme",
+         color = "F(atf) / F(pol)")+
+    facet_grid(env~factor(cap))
+  
+  ggsave(paste0(plotdir, "/pol_vs_atf.png"), p5, 
+         width = 12, height = 5, 
+         units = "in", dpi = 300)
+  
   
 }
 
 plot_fishery(catch_df)
 
+
+
+
+# any other interesting views?
+# pol_vs_atf %>%
+#   filter(wgts == "binary") %>%
+#   filter(!is.na(f_ratio)) %>%
+#   filter(Time > 365*10) %>%
+#   ggplot(aes(x = f_pol, y = biom_pol, color = f_ratio, shape = factor(wgts)))+
+#   geom_point(aes(shape = factor(wgts)), size = 2)+
+#   #scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+#   viridis::scale_color_viridis(option = "inferno")+
+#   theme_bw()+
+#   scale_x_continuous(limits = c(0,NA))+
+#   scale_y_continuous(limits = c(0,NA))+
+#   labs(x = "Pollock F",
+#        y = "Pollock selected biomass (mt)",
+#        shape = "Weight scheme",
+#        color = "F(atf) / F(pol)")+
+#   facet_grid(factor(cap)~env)
+  
 
 
 # OLD CODE
