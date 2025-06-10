@@ -29,6 +29,9 @@ cap_vec <- as.numeric(unlist(strsplit(harvest[grep("FlagSystCapSP", harvest)+1],
 oy_species <- codes[which(cap_vec>0)]
 
 oy_fleets <- "background" # manually set this, it will just be bg for the foreseeable future
+biom_file <- paste0("outputGOA0", ref_run, "_testAgeBiomIndx.txt")
+biom <- read.csv(paste(wd, biom_file, sep = "/"), sep = " ", header = T)
+yr_end <- ceiling(max(unique(biom$Time)))/365
 
 # get spp that are managed with the HCRs
 hcr_spp <- c()
@@ -41,6 +44,15 @@ for(sp in codes){
     if(tier > 0){hcr_spp <- c(hcr_spp, sp)}
   }
 }
+
+# make a key with estBo information for all groundfish for which we have it from the OY paper
+# TODO: enter these values in the PRM file even though no HCR is being used so the code can just read them from there
+estbo_files <- list.files("data/estBo/", full.names = T)
+estbo_list <- list()
+for(i in 1:length(estbo_files)){
+  estbo_list[[i]] <- read.csv(estbo_files[i])
+}
+estbo_key <- bind_rows(estbo_list) %>% select(Code, mean_biom) %>% rename(estbo = mean_biom)
 
 # Run properties ----------------------------------------------------------
 # Still debating on the best way to do this - typing in here or reading in an excel sheet. Pros and cons to both
@@ -259,11 +271,11 @@ plot_fishery <- function(catch_df){
          shape = "Weight scheme",
          title = "")+
     facet_grid(name~env, scales = "free_y")
-
+  
   ggsave(paste0(plotdir, "/", "oy_tot.png"), p1, 
          width = 12, height = 6,  
          units = "in", dpi = 300)
-
+  
   
   # by species, biom fraction (need B0), f fraction, catch, biomass (selected), exploitation rate, ...?
   # maybe it would be best to produce this plot one species at a time
@@ -418,6 +430,58 @@ plot_fishery <- function(catch_df){
          width = 12, height = 5, 
          units = "in", dpi = 300)
   
+  # plot quantities relative to reference points and ecosystem indicators
+  # some of these are repeated from the time series graphs so probably can do away with this plot, but it makes you compare species
+  # summarize for early and late period to simplify the time dimension
+  ecoind_df_tmp <- catch_df %>%
+    filter(!is.na(catch_mt)) %>%
+    rowwise() %>%
+    mutate(period = ifelse(between(Time/365,15,25), "early",
+                           ifelse(Time/365>(yr_end-10), "late", NA))) %>%
+    ungroup() %>%
+    filter(!is.na(period)) %>%
+    group_by(run,cap,wgts,env,other,period,Code,Name,w,fref) %>%
+    summarize(biom_mt_tot = mean(biom_mt_tot),
+              catch_mt = mean(catch_mt),
+              f = mean(f),
+              oy_rescale = mean(oy_rescale)) %>%
+    ungroup()
+  
+  # need data sets of total biomass and total catch
+  ecoind_df_tot <- ecoind_df_tmp %>%
+    group_by(run,cap,wgts,env,other,period) %>%
+    summarise(tot_biom = sum(biom_mt_tot),
+              tot_catch = sum(catch_mt)) %>%
+    ungroup()
+  
+  ecoind_df <- ecoind_df_tmp %>%
+    left_join(estbo_key) %>%
+    left_join(ecoind_df_tot) %>%
+    mutate(b_over_b0 = biom_mt_tot / estbo,
+           f_over_ftarg = f/fref,
+           biom_over_btot = biom_mt_tot / tot_biom,
+           catch_over_ctot = catch_mt / tot_catch) %>%
+    select(run:Name, oy_rescale, b_over_b0:catch_over_ctot)
+  
+  # pivot longer
+  ecoind_df_long <- ecoind_df %>%
+    pivot_longer(-c(run:Name)) %>%
+    ungroup()
+  
+  # dot plot
+  p6 <- ecoind_df_long %>%
+    filter(env == "ssp585", Code %in% c("POL","COD","ATF","SBF","POP")) %>%
+    ggplot(aes(x = name, y = value, color = factor(cap), shape = wgts))+
+    geom_point(position = position_dodge(width = .75), size = 2)+
+    theme_bw()+
+    geom_hline(yintercept = 1, linetype = "dashed")+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    labs(x = "", y = "", color = "Cap (mt)", shape = "Weight scheme")+
+    facet_grid(Code~period)
+  
+  ggsave(paste0(plotdir, "/ecoind.png"), p6, 
+         width = 12, height = 6.5, 
+         units = "in", dpi = 300)
   
 }
 
@@ -443,7 +507,7 @@ plot_fishery(catch_df)
 #        shape = "Weight scheme",
 #        color = "F(atf) / F(pol)")+
 #   facet_grid(factor(cap)~env)
-  
+
 
 
 # OLD CODE
