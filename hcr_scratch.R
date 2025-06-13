@@ -13,6 +13,7 @@
 library(tidyverse)
 library(ggh4x)
 library(patchwork)
+library(PNWColors)
 
 rm(list = ls())
 
@@ -30,7 +31,7 @@ oy_species <- codes[which(cap_vec>0)]
 
 oy_fleets <- "background" # manually set this, it will just be bg for the foreseeable future
 biom_file <- paste0("outputGOA0", ref_run, "_testAgeBiomIndx.txt")
-biom <- read.csv(paste(wd, biom_file, sep = "/"), sep = " ", header = T)
+biom <- read.csv(paste(oy_dir, biom_file, sep = "/"), sep = " ", header = T)
 yr_end <- ceiling(max(unique(biom$Time)))/365
 
 # get spp that are managed with the HCRs
@@ -214,6 +215,12 @@ pull_fishery_info <- function(this_run){
   res_df <- res_df %>%
     left_join(ecocap_report, by = c("Time", "Code"))
   
+  # TODO: remove this chunk when we add estBo to the harvest.prm file for all stocks
+  res_df <- res_df %>%
+    left_join(estbo_key, by = "Code") %>%
+    mutate(biom_frac = biom_mt_tot / estbo) %>%
+    select(-estbo)
+
   return(res_df)
 }
 
@@ -224,18 +231,29 @@ catch_df <- catch_df %>%
   left_join(key_config, by = "run") %>%
   left_join(grps %>% select(Code, Name), by = "Code")
 
+# turn caps into factors for better plotting
+catch_df$cap <- as.character(catch_df$cap)
+catch_df$cap[is.na(catch_df$cap)] <- "No cap"
+
 # get preferred species given a certain weighting scheme
 # using > mean(w) here in an attempt to automate the choice
-pref <- catch_df %>%
-  select(Code, w, wgts) %>%
-  distinct() %>%
-  group_by(wgts) %>%
-  mutate(mean_w = mean(w)) %>%
-  rowwise() %>%
-  mutate(pref = ifelse(w>=mean_w,1,0))%>%
-  ungroup()%>%
-  filter(pref>0)%>%
-  select(Code,wgts,pref)
+# pref <- catch_df %>%
+#   select(Code, w, wgts) %>%
+#   distinct() %>%
+#   group_by(wgts) %>%
+#   mutate(mean_w = mean(w)) %>%
+#   rowwise() %>%
+#   mutate(pref = ifelse(w>=mean_w,1,0))%>%
+#   ungroup()%>%
+#   filter(pref>0)%>%
+#   select(Code,wgts,pref)
+
+# this does not really work for the equal weight scenario though. The preferred species would need to be the same across scenarios for meaningful comparisons
+# as a second option, set the preferred species to the usual suspects
+pref <- data.frame("Code" = oy_species) %>%
+  rowwise()%>%
+  mutate(pref = ifelse(Code %in% c("POL","COD","SBF","POP"),1,0))
+
 
 # Plots -------------------------------------------------------------------
 
@@ -251,6 +269,9 @@ plot_fishery <- function(catch_df){
     print("This directory exists")
   }
   
+  # make a palette
+  cap_col <- pnw_palette(name="Sunset2",n=length(unique(catch_df$cap)),type="discrete")
+  
   # total catch against cap
   p1 <- catch_df %>%
     filter(!is.na(catch_mt)) %>%
@@ -261,8 +282,9 @@ plot_fishery <- function(catch_df){
     pivot_longer(-c(Time:other)) %>%
     ggplot(aes(x = Time/365, y = value, color = factor(cap), shape = factor(wgts)))+
     geom_point()+
+    scale_color_manual(values = cap_col)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
-    geom_hline(aes(yintercept = cap), linetype = "dashed")+
+    geom_hline(aes(yintercept = as.numeric(cap)), linetype = "dashed")+
     theme_bw()+
     scale_y_continuous(limits = c(0,NA))+
     labs(x = "Year", 
@@ -275,7 +297,6 @@ plot_fishery <- function(catch_df){
   ggsave(paste0(plotdir, "/", "oy_tot.png"), p1, 
          width = 12, height = 6,  
          units = "in", dpi = 300)
-  
   
   # by species, biom fraction (need B0), f fraction, catch, biomass (selected), exploitation rate, ...?
   # maybe it would be best to produce this plot one species at a time
@@ -292,7 +313,8 @@ plot_fishery <- function(catch_df){
       select(-fref, -biom_mt_tot, -biom_mt_selex, -mu, -w) %>%
       pivot_longer(-c(Time, Code, Name, run, cap, wgts, env, other)) %>%
       ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(wgts))) +
-      geom_line() +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = cap_col)+
       scale_y_continuous(limits = c(0,NA)) +
       facet_grid2(env ~ name, scales = "free_y", independent = "y") +
       labs(title = current_name,
@@ -314,10 +336,11 @@ plot_fishery <- function(catch_df){
   }
   
   # for HCR species only: HCR plots
+  # TODO: if we include estbo for all stocks in the PRM, we could plot these for all stocks to see how the OY makes the HCR look (even though there is no HCR with ramp)
   
-  for(i in seq_along(hcr_spp)){
+  for(i in seq_along(oy_species)){
     
-    current_code <- hcr_spp[i]
+    current_code <- oy_species[i]
     current_name <- grps %>% filter(Code == current_code) %>% pull(Name)
     
     # TODO: sort out faceting - you want the interesting feature to be in the same panel (e.g., facet by weight scheme or by climate scenario?)
@@ -326,11 +349,11 @@ plot_fishery <- function(catch_df){
       ggplot(aes(x = biom_frac, y = f/fref, color = Time/365))+
       geom_point(aes(shape = factor(wgts)), size = 2)+
       scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
-      scale_color_viridis_c(option = "inferno")+
-      geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 1)+
-      geom_vline(xintercept = 0.02, linetype = "dashed", color = "red", linewidth = 1)+
-      geom_vline(xintercept = 0.2, linetype = "dotted", color = "orange", linewidth = 1)+
-      geom_hline(yintercept = 1, linetype = "dashed", linewidth = 1, color = "steelblue")+
+      scale_color_viridis_c(option = "viridis")+
+      geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 0.75)+
+      geom_vline(xintercept = 0.02, linetype = "dashed", color = "red", linewidth = 0.75)+
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "orange", linewidth = 0.75)+
+      geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.75, color = "steelblue")+
       scale_y_continuous(limits = c(0,NA))+
       theme_bw()+
       labs(x = "B/B0", 
@@ -340,30 +363,31 @@ plot_fishery <- function(catch_df){
            title = current_name)+
       facet_grid(factor(env)~cap)
     
-    ggsave(paste0(plotdir, "/", current_code, "_hcr.png"), p2, 
+    ggsave(paste0(plotdir, "/hcr/", current_code, "_hcr.png"), p2, 
            width = 12, height = 5, 
            units = "in", dpi = 300)
     
   }
   
   # ecocap rescaling
-  p3 <- catch_df %>%
-    filter(!is.na(catch_mt)) %>%
-    ggplot(aes(x = Time / 365, y = oy_rescale, color = env, linetype = wgts))+
-    geom_line()+
-    theme_bw()+
-    labs(x = "Year", y = "OY-based catch rescaling")+
-    facet_grid(Code~cap)
-  
-  ggsave(paste0(plotdir, "/", "rescale_factor.png"), p3, 
-         width = 8, height = 24, 
-         units = "in", dpi = 300)
+  # p3 <- catch_df %>%
+  #   filter(!is.na(catch_mt)) %>%
+  #   ggplot(aes(x = Time / 365, y = oy_rescale, color = env, linetype = wgts))+
+  #   geom_line()+
+  #   theme_bw()+
+  #   labs(x = "Year", y = "OY-based catch rescaling")+
+  #   facet_grid(Code~cap)
+  # 
+  # ggsave(paste0(plotdir, "/", "rescale_factor.png"), p3, 
+  #        width = 8, height = 24, 
+  #        units = "in", dpi = 300)
   
   # catch of preferred species vs biomass of all species
-  # first get catch of preferred species for each scenario
+  # preferred species should not be based on the we
   pref_catch <- catch_df %>%
     filter(!is.na(catch_mt)) %>%
-    left_join(pref, by = c("Code","wgts")) %>%
+    #left_join(pref, by = c("Code","wgts")) %>%
+    left_join(pref, by = "Code") %>%
     filter(pref==1) %>%
     group_by(Time,run,cap,wgts,env)%>%
     summarise(catch_mt = sum(catch_mt))
@@ -375,7 +399,8 @@ plot_fishery <- function(catch_df){
     summarise(biom_mt_tot = sum(biom_mt_tot)) %>%
     left_join(pref_catch) %>%
     ggplot(aes(x=catch_mt, y = biom_mt_tot, color = factor(cap), shape = factor(wgts)))+
-    geom_point()+
+    geom_point(size = 2)+
+    scale_color_manual(values = cap_col)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     scale_x_continuous(limits = c(0,NA))+
     scale_y_continuous(limits = c(0,NA))+
@@ -393,16 +418,14 @@ plot_fishery <- function(catch_df){
   # image relating POL to ATF somehow
   pol <- catch_df %>%
     filter(Code == "POL") %>%
-    select(Time, biom_mt_selex, catch_mt, f, run, cap:env) %>%
-    rename(biom_pol = biom_mt_selex,
-           catch_pol = catch_mt,
+    select(Time, biom_frac, f, run, cap:env) %>%
+    rename(biom_pol = biom_frac,
            f_pol = f)
   
   atf <- catch_df %>%
     filter(Code == "ATF") %>%
-    select(Time, biom_mt_selex, catch_mt, f, run, cap:env) %>%
-    rename(biom_atf = biom_mt_selex,
-           catch_atf = catch_mt,
+    select(Time, biom_frac, f, run, cap:env) %>%
+    rename(biom_atf = biom_frac,
            f_atf = f)
   
   pol_vs_atf <- pol %>%
@@ -415,13 +438,12 @@ plot_fishery <- function(catch_df){
     ggplot(aes(x = biom_atf, y = biom_pol, color = f_ratio, shape = factor(wgts)))+
     geom_point(aes(shape = factor(wgts)), size = 2)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
-    viridis::scale_color_viridis(option = "inferno", begin = 0.05, end = 0.95)+
+    viridis::scale_color_viridis(option = "cividis", begin = 0.05, end = 0.95)+
     theme_bw()+
-    scale_x_continuous(limits = c(0,NA), labels = scales::scientific)+
-    scale_y_continuous(limits = c(0,NA), labels = scales::scientific)+
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-    labs(x = "Arrowtooth selected biomass (mt)",
-         y = "Pollock selected biomass (mt)",
+    scale_x_continuous(limits = c(0,NA))+
+    scale_y_continuous(limits = c(0,NA))+
+    labs(x = "Arrowtooth B/B0",
+         y = "Pollock B/B0",
          shape = "Weight scheme",
          color = "F(atf) / F(pol)")+
     facet_grid(env~factor(cap))
@@ -473,6 +495,7 @@ plot_fishery <- function(catch_df){
     filter(env == "ssp585", Code %in% c("POL","COD","ATF","SBF","POP")) %>%
     ggplot(aes(x = name, y = value, color = factor(cap), shape = wgts))+
     geom_point(position = position_dodge(width = .75), size = 2)+
+    scale_color_manual(values = cap_col)+
     theme_bw()+
     geom_hline(yintercept = 1, linetype = "dashed")+
     theme(axis.text.x = element_text(angle = 45, hjust = 1))+
@@ -486,9 +509,6 @@ plot_fishery <- function(catch_df){
 }
 
 plot_fishery(catch_df)
-
-
-
 
 # any other interesting views?
 # pol_vs_atf %>%
@@ -513,112 +533,112 @@ plot_fishery(catch_df)
 # OLD CODE
 # Plot total biomass ------------------------------------------------------
 # pull total catch of the oy species
-plot_biom <- function(this_run){
-  
-  #this_run <- 1906      
-  
-  wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
-  biom_file <- paste0("outputGOA0", this_run, "_testAgeBiomIndx.txt")
-  harvest_prm <- list.files(wd)[grep("GOA_harvest_.*.prm", list.files(wd))]
-  
-  biom <- read.csv(paste(wd, biom_file, sep = "/"), sep = " ", header = T)
-  #harvest <- readLines(paste(wd, harvest_prm, sep = "/"))
-  #startage <- as.numeric(unlist(strsplit(harvest[grep(paste0(this_sp, "_mFC_startage"), harvest)+1], split = " ")))[1]
-  
-  #estbo <- estbo_key %>% filter(run == this_run) %>% pull(estbo)
-  
-  # isolate POL
-  #biom <- biom %>% select(Time, POL) %>% rename(biom_mt = POL)
-  # selected biomass
-  # biom_selex <- biom %>%
-  #   pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
-  #   separate(`Code.Age`, into = c("Code", "Age"), sep = "\\.") %>%
-  #   filter(Code == this_sp) %>%
-  #   filter(Age >= startage) %>%
-  #   group_by(Time) %>%
-  #   summarise(biom_mt_selex = sum(mt))
-  
-  # total biomass for B/B0
-  biom_tot <- biom %>%
-    pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
-    separate(`Code.Age`, into = c("Code", "Age"), sep = "\\.") %>%
-    filter(Code %in% oy_species) %>%
-    #filter(Code == this_sp) %>%
-    group_by(Time) %>%
-    mutate(biom_mt_tot = sum(mt)) %>%
-    ungroup() %>%
-    mutate(run = this_run)#,
-  #biom_frac = biom_mt_tot / estbo)
-  
-  # tmp <- left_join(biom_selex, biom_tot, by = "Time") %>%
-  #   mutate(run = this_run,
-  #          biom_frac = biom_mt_tot / estbo)
-  return(biom_tot)
-  
-}
-
-biom_df <- bind_rows(lapply(all_runs, plot_biom)) %>%
-  left_join(label_key, by = "run")
-
-# order follows the 
-biom_df <- biom_df %>% left_join(key_wgts)
-biom_df$wgts <- factor(biom_df$wgts, levels = c("Equal","Binary","Value-based"))
-
-# order species
-biom_df$Code <- factor(biom_df$Code, levels = oy_species)
-
-# plot all
-p1 <- biom_df %>%
-  filter(Time >= 50*365, Time <= 100*365) %>%
-  #filter(run %in% c(1877,1878)) %>%
-  ggplot(aes(x = Time/365, y = biom_mt_tot, color = factor(cap, levels = (unique(catch_df$cap)))))+
-  geom_point(size = 2)+#, position = position_dodge(width = 2))+
-  scale_color_manual(values = c("#0072B2", "#E69F00", "#009E73", "#CC79A7"))+
-  geom_hline(yintercept = this_cap, color = "black", linetype = "dashed", linewidth = 0.5)+
-  theme_bw()+
-  #scale_y_continuous(limits = c(0,400000), breaks = seq(0,4000000,50000))+
-  labs(x = "Year", 
-       y = "Catch (mt)", 
-       title = paste(paste(oy_species, collapse = ", "), "in OY"),
-       color = "Cap (mt)")+
-  facet_wrap(~wgts, nrow = 1)
-p1 
-#ggsave("../../FHL_Workshop/talk/total_catch.png", p1, width = 9, height = 4)
-
-# Terminal catch plot -----------------------------------------------------
-# instead of plotting time series, let's see if this looks better
-terminal_biom <- biom_df %>%
-  group_by(Time,run,cap,wgts,Code)%>%
-  summarise(mt = sum(mt)) %>%
-  group_by(run,cap,wgts,Code) %>%
-  slice_max(Time, n=5) %>%
-  summarise(mt = mean(mt)) %>%
-  ungroup()
-
-# make a reference frame for the catch when the cap is not reached (400k)
-ref_frame <- terminal_biom %>%
-  filter(cap == 400000) %>%
-  rename(mt_nocap = mt) %>%
-  select(-run,-cap)
-
-# join
-terminal_biom <- terminal_biom %>%
-  left_join(ref_frame) %>%
-  mutate(rel_biom = mt / mt_nocap)
-
-# plot
-p4 <- terminal_biom %>%
-  filter(cap<400000) %>%
-  mutate(cap = factor(cap, levels = (unique(catch_df$cap)))) %>%
-  ggplot(aes(x = Code, y = rel_biom, fill = wgts))+
-  geom_bar(stat = "identity", position = position_dodge())+
-  geom_hline(yintercept = 1, color = "red", linetype = "dashed")+
-  #scale_fill_manual(values = c("#0072B2", "#E69F00", "#009E73", "#CC79A7"))+
-  theme_bw()+
-  labs(x = "Stock", 
-       y = "Ratio to total biomass without cap", 
-       title = "Terminal biomass",
-       fill = paste("Weights"))+
-  facet_grid(wgts~cap)
-p4
-ggsave("../../FHL_Workshop/talk/relbiom.png", p4, width = 9, height = 4.5)
+# plot_biom <- function(this_run){
+#   
+#   #this_run <- 1906      
+#   
+#   wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
+#   biom_file <- paste0("outputGOA0", this_run, "_testAgeBiomIndx.txt")
+#   harvest_prm <- list.files(wd)[grep("GOA_harvest_.*.prm", list.files(wd))]
+#   
+#   biom <- read.csv(paste(wd, biom_file, sep = "/"), sep = " ", header = T)
+#   #harvest <- readLines(paste(wd, harvest_prm, sep = "/"))
+#   #startage <- as.numeric(unlist(strsplit(harvest[grep(paste0(this_sp, "_mFC_startage"), harvest)+1], split = " ")))[1]
+#   
+#   #estbo <- estbo_key %>% filter(run == this_run) %>% pull(estbo)
+#   
+#   # isolate POL
+#   #biom <- biom %>% select(Time, POL) %>% rename(biom_mt = POL)
+#   # selected biomass
+#   # biom_selex <- biom %>%
+#   #   pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
+#   #   separate(`Code.Age`, into = c("Code", "Age"), sep = "\\.") %>%
+#   #   filter(Code == this_sp) %>%
+#   #   filter(Age >= startage) %>%
+#   #   group_by(Time) %>%
+#   #   summarise(biom_mt_selex = sum(mt))
+#   
+#   # total biomass for B/B0
+#   biom_tot <- biom %>%
+#     pivot_longer(-Time, names_to = "Code.Age", values_to = "mt") %>%
+#     separate(`Code.Age`, into = c("Code", "Age"), sep = "\\.") %>%
+#     filter(Code %in% oy_species) %>%
+#     #filter(Code == this_sp) %>%
+#     group_by(Time) %>%
+#     mutate(biom_mt_tot = sum(mt)) %>%
+#     ungroup() %>%
+#     mutate(run = this_run)#,
+#   #biom_frac = biom_mt_tot / estbo)
+#   
+#   # tmp <- left_join(biom_selex, biom_tot, by = "Time") %>%
+#   #   mutate(run = this_run,
+#   #          biom_frac = biom_mt_tot / estbo)
+#   return(biom_tot)
+#   
+# }
+# 
+# biom_df <- bind_rows(lapply(all_runs, plot_biom)) %>%
+#   left_join(label_key, by = "run")
+# 
+# # order follows the 
+# biom_df <- biom_df %>% left_join(key_wgts)
+# biom_df$wgts <- factor(biom_df$wgts, levels = c("Equal","Binary","Value-based"))
+# 
+# # order species
+# biom_df$Code <- factor(biom_df$Code, levels = oy_species)
+# 
+# # plot all
+# p1 <- biom_df %>%
+#   filter(Time >= 50*365, Time <= 100*365) %>%
+#   #filter(run %in% c(1877,1878)) %>%
+#   ggplot(aes(x = Time/365, y = biom_mt_tot, color = factor(cap, levels = (unique(catch_df$cap)))))+
+#   geom_point(size = 2)+#, position = position_dodge(width = 2))+
+#   scale_color_manual(values = c("#0072B2", "#E69F00", "#009E73", "#CC79A7"))+
+#   geom_hline(yintercept = this_cap, color = "black", linetype = "dashed", linewidth = 0.5)+
+#   theme_bw()+
+#   #scale_y_continuous(limits = c(0,400000), breaks = seq(0,4000000,50000))+
+#   labs(x = "Year", 
+#        y = "Catch (mt)", 
+#        title = paste(paste(oy_species, collapse = ", "), "in OY"),
+#        color = "Cap (mt)")+
+#   facet_wrap(~wgts, nrow = 1)
+# p1 
+# #ggsave("../../FHL_Workshop/talk/total_catch.png", p1, width = 9, height = 4)
+# 
+# # Terminal catch plot -----------------------------------------------------
+# # instead of plotting time series, let's see if this looks better
+# terminal_biom <- biom_df %>%
+#   group_by(Time,run,cap,wgts,Code)%>%
+#   summarise(mt = sum(mt)) %>%
+#   group_by(run,cap,wgts,Code) %>%
+#   slice_max(Time, n=5) %>%
+#   summarise(mt = mean(mt)) %>%
+#   ungroup()
+# 
+# # make a reference frame for the catch when the cap is not reached (400k)
+# ref_frame <- terminal_biom %>%
+#   filter(cap == 400000) %>%
+#   rename(mt_nocap = mt) %>%
+#   select(-run,-cap)
+# 
+# # join
+# terminal_biom <- terminal_biom %>%
+#   left_join(ref_frame) %>%
+#   mutate(rel_biom = mt / mt_nocap)
+# 
+# # plot
+# p4 <- terminal_biom %>%
+#   filter(cap<400000) %>%
+#   mutate(cap = factor(cap, levels = (unique(catch_df$cap)))) %>%
+#   ggplot(aes(x = Code, y = rel_biom, fill = wgts))+
+#   geom_bar(stat = "identity", position = position_dodge())+
+#   geom_hline(yintercept = 1, color = "red", linetype = "dashed")+
+#   #scale_fill_manual(values = c("#0072B2", "#E69F00", "#009E73", "#CC79A7"))+
+#   theme_bw()+
+#   labs(x = "Stock", 
+#        y = "Ratio to total biomass without cap", 
+#        title = "Terminal biomass",
+#        fill = paste("Weights"))+
+#   facet_grid(wgts~cap)
+# p4
+# ggsave("../../FHL_Workshop/talk/relbiom.png", p4, width = 9, height = 4.5)
