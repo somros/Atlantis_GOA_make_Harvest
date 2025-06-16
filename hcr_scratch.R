@@ -37,7 +37,7 @@ biom <- read.csv(paste(oy_dir, biom_file, sep = "/"), sep = " ", header = T)
 yr_end <- ceiling(max(unique(biom$Time)))/365
 
 # if the end of the run should be shorter, specify it here:
-yr_end <- 80
+# yr_end <- 80
 
 # get spp that are managed with the HCRs
 hcr_spp <- c()
@@ -291,7 +291,7 @@ plot_fishery <- function(catch_df){
     ungroup() %>%
     pivot_longer(-c(Time:other)) %>%
     ggplot(aes(x = Time/365, y = value, color = factor(cap), shape = factor(wgts)))+
-    geom_point()+
+    geom_point(size = 1)+
     scale_color_manual(values = cap_col)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     geom_hline(aes(yintercept = as.numeric(cap)), linetype = "dashed")+
@@ -301,11 +301,11 @@ plot_fishery <- function(catch_df){
          y = "mt",
          color = "Cap (mt)",
          shape = "Weight scheme",
-         title = "")+
+         title = "Total biomass and catch of OY species")+
     facet_grid(name~env, scales = "free_y")
   
   ggsave(paste0(plotdir, "/", "oy_tot.png"), p1, 
-         width = 12, height = 6,  
+         width = 8, height = 4.5,  
          units = "in", dpi = 300)
   
   # by species, biom fraction (need B0), f fraction, catch, biomass (selected), exploitation rate, ...?
@@ -320,7 +320,7 @@ plot_fishery <- function(catch_df){
       filter(Code == current_code) %>%
       filter(!is.na(catch_mt)) %>%
       mutate(f_frac = f / fref) %>%
-      select(-fref, -biom_mt_tot, -biom_mt_selex, -mu, -w) %>%
+      select(-fref, -f, -biom_mt_tot, -biom_mt_selex, -mu, -w) %>%
       pivot_longer(-c(Time, Code, Name, run, cap, wgts, env, other)) %>%
       ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(wgts))) +
       geom_line(linewidth = 1) +
@@ -332,15 +332,10 @@ plot_fishery <- function(catch_df){
            y = "",
            color = "Cap (mt)",
            linetype = "Weight scheme") +
-      theme_bw() +
-      theme(
-        plot.title = element_text(hjust = 0.5, size = 12),
-        strip.text = element_text(size = 8),
-        axis.text = element_text(size = 7)
-      ) 
+      theme_bw()
     
     ggsave(paste0(plotdir, "/by_spp/", current_code, ".png"), p_tmp, 
-           width = 12, height = 5,  
+           width = 10, height = 4.5,  
            units = "in", dpi = 300)
     
   }
@@ -355,15 +350,15 @@ plot_fishery <- function(catch_df){
     
     # TODO: sort out faceting - you want the interesting feature to be in the same panel (e.g., facet by weight scheme or by climate scenario?)
     p2 <- catch_df %>%
-      filter(Code == current_code, Time >= 10*365, !is.na(catch_mt)) %>%
+      filter(Code == current_code, Time >= 15*365, !is.na(catch_mt)) %>%
       ggplot(aes(x = biom_frac, y = f/fref, color = Time/365))+
-      geom_point(aes(shape = factor(wgts)), size = 2)+
+      geom_point(aes(shape = factor(wgts)), size = 1.5)+
       scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
       scale_color_viridis_c(option = "viridis")+
-      geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 0.75)+
-      geom_vline(xintercept = 0.02, linetype = "dashed", color = "red", linewidth = 0.75)+
-      geom_vline(xintercept = 0.2, linetype = "dotted", color = "orange", linewidth = 0.75)+
-      geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.75, color = "steelblue")+
+      geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 0.5)+
+      geom_vline(xintercept = 0.02, linetype = "dashed", color = "red", linewidth = 0.5)+
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "orange", linewidth = 0.5)+
+      geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.5, color = "steelblue")+
       scale_y_continuous(limits = c(0,NA))+
       theme_bw()+
       labs(x = "B/B0", 
@@ -374,7 +369,7 @@ plot_fishery <- function(catch_df){
       facet_grid(factor(env)~cap)
     
     ggsave(paste0(plotdir, "/hcr/", current_code, "_hcr.png"), p2, 
-           width = 12, height = 5, 
+           width = 10, height = 4.5, 
            units = "in", dpi = 300)
     
   }
@@ -417,12 +412,13 @@ plot_fishery <- function(catch_df){
     labs(x = "Biomass of all OY species (mt)",
          y = "Catch of pollock, cod, POP, sablefish (mt)",
          color = "Cap (mt)",
-         shape = "Weight scheme")+
+         shape = "Weight scheme",
+         title = "Catch-biomass tradeoff")+
     theme_bw()+
     facet_wrap(~env)
   
   ggsave(paste0(plotdir, "/", "catch_vs_biomass.png"), p4, 
-         width = 10, height = 5, 
+         width = 9, height = 4.5, 
          units = "in", dpi = 300)
   
   # image relating POL to ATF somehow
@@ -444,9 +440,9 @@ plot_fishery <- function(catch_df){
   
   p5 <- pol_vs_atf %>%
     filter(!is.na(f_ratio)) %>%
-    filter(Time > 365*10) %>%
+    filter(Time > 365*15) %>%
     ggplot(aes(x = biom_atf, y = biom_pol, color = f_ratio, shape = factor(wgts)))+
-    geom_point(aes(shape = factor(wgts)), size = 2)+
+    geom_point(aes(shape = factor(wgts)), size = 1.5)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     viridis::scale_color_viridis(option = "cividis", begin = 0.05, end = 0.95)+
     theme_bw()+
@@ -455,11 +451,12 @@ plot_fishery <- function(catch_df){
     labs(x = "Arrowtooth B/B0",
          y = "Pollock B/B0",
          shape = "Weight scheme",
-         color = "F(atf) / F(pol)")+
+         color = "F(atf) / F(pol)",
+         title = "Pollock-arrowtooth tradeoffs")+
     facet_grid(env~factor(cap))
   
   ggsave(paste0(plotdir, "/pol_vs_atf.png"), p5, 
-         width = 12, height = 5, 
+         width = 9, height = 4.5, 
          units = "in", dpi = 300)
   
   # plot quantities relative to reference points and ecosystem indicators
