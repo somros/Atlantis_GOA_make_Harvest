@@ -30,9 +30,14 @@ cap_vec <- as.numeric(unlist(strsplit(harvest[grep("FlagSystCapSP", harvest)+1],
 oy_species <- codes[which(cap_vec>0)]
 
 oy_fleets <- "background" # manually set this, it will just be bg for the foreseeable future
+
+# time
 biom_file <- paste0("outputGOA0", ref_run, "_testAgeBiomIndx.txt")
 biom <- read.csv(paste(oy_dir, biom_file, sep = "/"), sep = " ", header = T)
 yr_end <- ceiling(max(unique(biom$Time)))/365
+
+# if the end of the run should be shorter, specify it here:
+yr_end <- 80
 
 # get spp that are managed with the HCRs
 hcr_spp <- c()
@@ -112,6 +117,11 @@ pull_fishery_info <- function(this_run){
   catch <- read.csv(paste(wd, catch_file, sep = "/"), sep = " ", header = T)
   harvest <- readLines(paste(wd, harvest_prm, sep = "/"))
   ecocap_report <- read.delim(ecocap_file, sep = " ")
+  
+  # subset time early on if necessary
+  biom <- biom %>% filter(Time/365 <= yr_end)
+  catch <- catch %>% filter(Time/365 <= yr_end)
+  ecocap_report <- ecocap_report %>% filter(Time/365 <= yr_end)
   
   # Process biomass data once, outside the loop
   # Convert to long format once and use faster string splitting
@@ -398,14 +408,14 @@ plot_fishery <- function(catch_df){
     group_by(Time,run,cap,wgts,env)%>%
     summarise(biom_mt_tot = sum(biom_mt_tot)) %>%
     left_join(pref_catch) %>%
-    ggplot(aes(x=catch_mt, y = biom_mt_tot, color = factor(cap), shape = factor(wgts)))+
+    ggplot(aes(x=biom_mt_tot, y = catch_mt, color = factor(cap), shape = factor(wgts)))+
     geom_point(size = 2)+
     scale_color_manual(values = cap_col)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     scale_x_continuous(limits = c(0,NA))+
     scale_y_continuous(limits = c(0,NA))+
-    labs(x = "Catch of preferred species (mt)",
-         y = "Biomass of all OY species (mt)",
+    labs(x = "Biomass of all OY species (mt)",
+         y = "Catch of pollock, cod, POP, sablefish (mt)",
          color = "Cap (mt)",
          shape = "Weight scheme")+
     theme_bw()+
