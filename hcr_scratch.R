@@ -65,21 +65,23 @@ estbo_key <- bind_rows(estbo_list) %>% select(Code, mean_biom) %>% rename(estbo 
 # model runs
 #run <- c(2060, 2061, 2064, 2065, 2066, 2067, 2072, 2073, 2074, 2075)
 #run <- c(2072, 2073, 2074, 2075, 2080, 2081, 2082, 2083)
-run <- c(2097:2112)
+run <- c(2097:2112, 2124:2143)
 
 # caps
 #cap <- c(400, 200, 600, 400, 200, 600, NA, 400, 200, 600) * 1000
 #cap <- rep(c(NA, 400, 200, 600), 2) * 1000
-cap <- rep(c(200,400,600,NA), 4) * 1000
+cap <- rep(c(200,400,600,NA), 9) * 1000
 
 # weight scheme
 #wgts <- c(rep("equal", 3), rep("binary", 4), rep("ramp", 3))
 #wgts <- c(rep("ramp", 8))
-wgts <- c(rep("equal", 8), rep("binary", 8))
+wgts <- c(rep("equal", 8), rep("binary", 8), rep("equal", 4), rep("binary", 4), rep("ramp", 12))
 
 # climate forcings
 # env <- c(rep(1999, 4), rep("2014", 4))
-env <- rep(c(rep("ssp126", 4), rep("ssp585", 4)), 2)
+env <- c(rep(c(rep("ssp126", 4), rep("ssp585", 4)), 2),
+         rep("ssp245", 8),
+         c(rep("ssp126",4), rep("ssp585",4), rep("ssp245", 4)))
 
 # combine all run factors in a label key
 set_key <- function(run, cap = NULL, wgts = NULL, env = NULL, other = NULL) { # gamma = NULL, 
@@ -245,6 +247,9 @@ catch_df <- catch_df %>%
 catch_df$cap <- as.character(catch_df$cap)
 catch_df$cap[is.na(catch_df$cap)] <- "No cap"
 
+# order weigths
+catch_df$wgts <- factor(catch_df$wgts, levels = c("equal","binary","ramp"))
+
 # get preferred species given a certain weighting scheme
 # using > mean(w) here in an attempt to automate the choice
 # pref <- catch_df %>%
@@ -290,22 +295,23 @@ plot_fishery <- function(catch_df){
               biom_tot = sum(biom_mt_selex)) %>%
     ungroup() %>%
     pivot_longer(-c(Time:other)) %>%
-    ggplot(aes(x = Time/365, y = value, color = factor(cap), shape = factor(wgts)))+
-    geom_point(size = 1)+
+    ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(wgts)))+
+    geom_line(linewidth = 0.5)+
     scale_color_manual(values = cap_col)+
-    scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
-    geom_hline(aes(yintercept = as.numeric(cap)), linetype = "dashed")+
+    #scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+    scale_linetype_manual(values = c("solid","dashed","dotted"))+
+    geom_hline(aes(yintercept = as.numeric(cap)), linetype = "dashed", linewidth = 0.25)+
     theme_bw()+
     scale_y_continuous(limits = c(0,NA))+
     labs(x = "Year", 
          y = "mt",
          color = "Cap (mt)",
-         shape = "Weight scheme",
+         linetype = "Weight scheme",
          title = "Total biomass and catch of OY species")+
     facet_grid(name~env, scales = "free_y")
   
   ggsave(paste0(plotdir, "/", "oy_tot.png"), p1, 
-         width = 8, height = 4.5,  
+         width = 9, height = 5,  
          units = "in", dpi = 300)
   
   # by species, biom fraction (need B0), f fraction, catch, biomass (selected), exploitation rate, ...?
@@ -323,8 +329,9 @@ plot_fishery <- function(catch_df){
       select(-fref, -f, -biom_mt_tot, -biom_mt_selex, -mu, -w) %>%
       pivot_longer(-c(Time, Code, Name, run, cap, wgts, env, other)) %>%
       ggplot(aes(x = Time/365, y = value, color = factor(cap), linetype = factor(wgts))) +
-      geom_line(linewidth = 1) +
+      geom_line(linewidth = 0.5) +
       scale_color_manual(values = cap_col)+
+      scale_linetype_manual(values = c("solid","dashed","dotted"))+
       scale_y_continuous(limits = c(0,NA)) +
       facet_grid2(env ~ name, scales = "free_y", independent = "y") +
       labs(title = current_name,
@@ -352,7 +359,7 @@ plot_fishery <- function(catch_df){
     p2 <- catch_df %>%
       filter(Code == current_code, Time >= 15*365, !is.na(catch_mt)) %>%
       ggplot(aes(x = biom_frac, y = f/fref, color = Time/365))+
-      geom_point(aes(shape = factor(wgts)), size = 1.5)+
+      geom_point(aes(shape = factor(wgts)), size = 1)+
       scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
       scale_color_viridis_c(option = "viridis")+
       geom_vline(xintercept = 0.4, linetype = "dashed", color = "blue", linewidth = 0.5)+
@@ -404,7 +411,7 @@ plot_fishery <- function(catch_df){
     summarise(biom_mt_tot = sum(biom_mt_tot)) %>%
     left_join(pref_catch) %>%
     ggplot(aes(x=biom_mt_tot, y = catch_mt, color = factor(cap), shape = factor(wgts)))+
-    geom_point(size = 2)+
+    geom_point(size = 1)+
     scale_color_manual(values = cap_col)+
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     scale_x_continuous(limits = c(0,NA))+
@@ -418,7 +425,7 @@ plot_fishery <- function(catch_df){
     facet_wrap(~env)
   
   ggsave(paste0(plotdir, "/", "catch_vs_biomass.png"), p4, 
-         width = 9, height = 4.5, 
+         width = 10, height = 4.5, 
          units = "in", dpi = 300)
   
   # image relating POL to ATF somehow
@@ -441,13 +448,20 @@ plot_fishery <- function(catch_df){
   p5 <- pol_vs_atf %>%
     filter(!is.na(f_ratio)) %>%
     filter(Time > 365*15) %>%
+    filter(Time %in% (seq(0,yr_end,10)*365)) %>% # thin out
     ggplot(aes(x = biom_atf, y = biom_pol, color = f_ratio, shape = factor(wgts)))+
+    geom_line(aes(group = interaction(Time, cap)), size = 0.5) +
     geom_point(aes(shape = factor(wgts)), size = 1.5)+
+    geom_text(data = . %>% filter(wgts == "equal"), 
+              aes(label = Time / 365), 
+              nudge_x = -0.025, nudge_y = 0.025, 
+              size = 2.5, color = "black", 
+              check_overlap = F) +
     scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
     viridis::scale_color_viridis(option = "cividis", begin = 0.05, end = 0.95)+
     theme_bw()+
-    scale_x_continuous(limits = c(0,NA))+
-    scale_y_continuous(limits = c(0,NA))+
+    # scale_x_continuous(limits = c(0,NA))+
+    # scale_y_continuous(limits = c(0,NA))+
     labs(x = "Arrowtooth B/B0",
          y = "Pollock B/B0",
          shape = "Weight scheme",
@@ -456,7 +470,7 @@ plot_fishery <- function(catch_df){
     facet_grid(env~factor(cap))
   
   ggsave(paste0(plotdir, "/pol_vs_atf.png"), p5, 
-         width = 9, height = 4.5, 
+         width = 10, height = 5, 
          units = "in", dpi = 300)
   
   # plot quantities relative to reference points and ecosystem indicators
@@ -506,7 +520,7 @@ plot_fishery <- function(catch_df){
     theme_bw()+
     geom_hline(yintercept = 1, linetype = "dashed")+
     theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-    labs(x = "", y = "", color = "Cap (mt)", shape = "Weight scheme")+
+    labs(x = "", y = "", color = "Cap (mt)", shape = "Weight scheme", title = "ssp585")+
     facet_grid(Code~period)
   
   ggsave(paste0(plotdir, "/ecoind.png"), p6, 
