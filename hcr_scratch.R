@@ -10,24 +10,31 @@
 # For exmaple, different caps by different HCRs etc etc
 # Seems difficult to profuce one sinlge function
 
+# NB: as of 6/23/2025, none of these runs attempt to start management at the end of the burn in, AKA there is no burn-in
+
 library(tidyverse)
 library(ggh4x)
 library(patchwork)
 library(PNWColors)
+library(tidync)
+library(ncdf4)
 
 rm(list = ls())
+
+# General info ------------------------------------------------------------
 
 grps <- read.csv("data/GOA_Groups.csv")
 codes <- grps %>% pull(Code)
 
 # species and fleets
 # pull these from a reference OY run - comparing them makes sense only if all species are consistent
-ref_run <- 2097
+ref_run <- 2097 # for now this does not really make sense - this run has OY and HCR management starting on day 1
 oy_dir <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", ref_run)
 harvest_prm <- list.files(oy_dir)[grep("GOA_harvest_.*.prm", list.files(oy_dir))]
 harvest <- readLines(paste(oy_dir, harvest_prm, sep = "/"))
 cap_vec <- as.numeric(unlist(strsplit(harvest[grep("FlagSystCapSP", harvest)+1], split = " ")))
 oy_species <- codes[which(cap_vec>0)]
+oy_names <- grps %>% filter(Code %in% oy_species) %>% pull(Name) # need this for the NC files
 
 oy_fleets <- "background" # manually set this, it will just be bg for the foreseeable future
 
@@ -38,6 +45,25 @@ yr_end <- ceiling(max(unique(biom$Time)))/365
 
 # if the end of the run should be shorter, specify it here:
 # yr_end <- 80
+
+# maturity at age
+bio_prm <- list.files(oy_dir)[grep("GOAbioparam_.*.prm", list.files(oy_dir))]
+bio <- readLines(paste(oy_dir, bio_prm, sep = "/"))
+
+fspb_df <- data.frame()
+for(i in 1:length(oy_species)){
+  
+  sp <- oy_species[i]
+  fspb_line <- bio[grep(paste0("FSPB_", sp), bio) + 2]
+  fspb <- as.numeric(strsplit(fspb_line, split = " ")[[1]])
+  
+  fspb_sp <- data.frame("Code" = rep(sp, length(fspb)), 
+                        "age" = 0:(length(fspb)-1), 
+                        "fspb" = fspb)
+  
+  fspb_df <- rbind(fspb_df, fspb_sp)
+  
+}
 
 # get spp that are managed with the HCRs
 hcr_spp <- c()
@@ -59,6 +85,17 @@ for(i in 1:length(estbo_files)){
   estbo_list[[i]] <- read.csv(estbo_files[i])
 }
 estbo_key <- bind_rows(estbo_list) %>% select(Code, mean_biom) %>% rename(estbo = mean_biom)
+
+# make a directory to store plots
+# make a plot directory
+current_base_run <- run[1] # check that this asumption holds
+
+plotdir <- paste0("plots/oy/", current_base_run, "_", Sys.Date())
+if(!dir.exists(plotdir)){
+  dir.create(plotdir)
+} else {
+  print("This directory exists")
+}
 
 # Run properties ----------------------------------------------------------
 # Still debating on the best way to do this - typing in here or reading in an excel sheet. Pros and cons to both
@@ -232,7 +269,7 @@ pull_fishery_info <- function(this_run){
     left_join(estbo_key, by = "Code") %>%
     mutate(biom_frac = biom_mt_tot / estbo) %>%
     select(-estbo)
-
+  
   return(res_df)
 }
 
@@ -273,16 +310,6 @@ pref <- data.frame("Code" = oy_species) %>%
 # Plots -------------------------------------------------------------------
 
 plot_fishery <- function(catch_df){
-  
-  # make a plot directory
-  current_base_run <- unique(catch_df$run)[1]
-  
-  plotdir <- paste0("plots/oy/", current_base_run, "_", Sys.Date())
-  if(!dir.exists(plotdir)){
-    dir.create(plotdir)
-  } else {
-    print("This directory exists")
-  }
   
   # make a palette
   cap_col <- pnw_palette(name="Sunset2",n=length(unique(catch_df$cap)),type="discrete")
@@ -549,6 +576,227 @@ plot_fishery(catch_df)
 #        color = "F(atf) / F(pol)")+
 #   facet_grid(factor(cap)~env)
 
+
+
+# Shannon Index -----------------------------------------------------------
+
+fl <- 'data/GOA_WGS84_V4_final.bgm'
+bgm <- rbgm::read_bgm(fl)
+goa_sf <- rbgm::box_sf(bgm)
+boundary_boxes <- goa_sf %>% sf::st_set_geometry(NULL) %>% filter(boundary == TRUE) %>% pull(box_id) # get boundary boxes
+# function to set values in the boundary boxes to NA
+setNA <- function(mat) {
+  mat2 <- mat
+  if(length(dim(mat2))==3) mat2[,(boundary_boxes+1),]<-NA
+  if(length(dim(mat2))==2) mat2[(boundary_boxes+1),] <- NA
+  mat2
+}
+
+# Compute Shannon-Wiener H index 
+h_frame <- data.frame()
+get_H <- function(this_run, do_mature){
+  
+  print(paste(this_run, "NAA"))
+  
+  # File paths
+  wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
+  ncfile <- paste0(wd, "/outputGOA0", this_run, "_test.nc")
+  
+  this_ncfile <- tidync(ncfile)
+  this_ncdata <- nc_open(ncfile)
+  
+  ts <- ncdf4::ncvar_get(this_ncdata,varid = "t") %>% as.numeric
+  tyrs <- ts/(60*60*24*365)
+  
+  # do one fg at a time, then bring them back together
+  naa_frame <- data.frame()
+  for (i in 1:length(oy_names)){
+    
+    fg <- oy_names[i]
+    sp <- grps %>% filter(Name == fg) %>% pull(Code) # need this for the fspb frame
+    
+    # Get numbers by box
+    abun_vars <- hyper_vars(this_ncfile) %>% # all variables in the .nc file active grid
+      filter(grepl("_Nums",name)) %>% # filter for abundance variables
+      filter(grepl(fg,name)) # filter for specific functional group
+    
+    abun1 <- purrr::map(abun_vars$name,ncdf4::ncvar_get,nc=this_ncdata) %>% 
+      lapply(setNA) %>%
+      purrr::map(apply,MARGIN=3,FUN=sum,na.rm=T) %>% 
+      bind_cols() %>% 
+      suppressMessages() %>% 
+      set_names(abun_vars$name) %>% 
+      mutate(t=tyrs)
+    
+    abun2 <- abun1 %>%
+      pivot_longer(cols = -t,names_to = 'age_group',values_to = 'abun') %>%
+      mutate(age=parse_number(age_group)) %>%
+      mutate(year = ceiling(t)) %>%
+      mutate(Name = oy_names[i]) %>%
+      dplyr::select(year, Name, age, abun) %>%
+      mutate(age = age-1) # to be consistent with Atlantis style indexing from 0
+    
+    # bring in maturity info if needed
+    if(do_mature){
+      
+      abun2 <- abun2 %>%
+        left_join(fspb_df %>% filter(Code == sp), by = "age") %>%
+        mutate(abun = abun * fspb) 
+    }
+    
+    # get shannon index
+    h <- abun2 %>%
+      group_by(year, Name) %>%
+      mutate(tot_abun = sum(abun)) %>%
+      ungroup() %>%
+      mutate(p = abun / tot_abun,
+             step1 = p * log(p)) %>%
+      filter(!is.nan(step1)) %>%
+      group_by(year, Name) %>%
+      summarise(H = -sum(step1)) %>%
+      ungroup()
+    
+    # bind
+    h_frame <- rbind(h_frame, h)
+    
+  }
+  
+  # add run id
+  h_frame <- h_frame %>%
+    mutate(run = this_run)
+  
+  return(h_frame)
+  
+}
+
+# apply function to the nc files and get time series for all runs
+H <- bind_rows(lapply(run, get_H, do_mature=F))
+
+# join with catch DF
+h_plot <- catch_df %>%
+  filter(!is.na(f)) %>%
+  mutate(Time = Time/365) %>%
+  left_join(H, by = c("Time"="year","Name","run")) %>%
+  filter(Time > 15)
+
+for(i in 1:length(oy_species)){
+  
+  current_code <- oy_species[i]
+  current_name <- grps %>% filter(Code == current_code) %>% pull(Name)
+  
+  p7 <- h_plot %>%
+    filter(Name == current_name) %>%
+    ggplot(aes(x = f, y = H, color = Time, shape = wgts))+
+    geom_point(aes(shape = factor(wgts)), size = 1)+
+    scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+    scale_color_viridis_c(option = "viridis")+
+    #scale_y_continuous(limits = c(0,NA))+
+    theme_bw()+
+    labs(x = "F", 
+         y = "H", 
+         color = "Year",
+         shape = "Weight scheme",
+         title = paste("Shannon index for", current_name))+
+    facet_grid(factor(env)~cap)
+  
+  ggsave(paste0(plotdir, "/h/", current_code, "_hcr.png"), p7, 
+         width = 10, height = 4.5, 
+         units = "in", dpi = 300)
+  
+}
+
+
+
+# Diets -------------------------------------------------------------------
+
+# identify POL's predators: say all groups who have >5% POL in their diets at the end of the burn-in period
+
+# TODO: both this one and the H stuff above should / could be merged into the single plotting function
+# more generally, this script will need to be packaged better, with a function script to source etc
+# try to be on top of this so that it does not suck when we are writing up the pub
+
+# get diet proportions at the end of the burn-in from the "base run"
+burnin <- 15
+dietfile <-  paste0("outputGOA0", ref_run, "_testDietCheck.txt")
+diet <- read.csv(paste(oy_dir, dietfile, sep = "/"), sep = " ", header = T)
+
+# these are the species that have at least one cohort eating > 5% POL by the end of the burn-in
+POL_predators <- diet %>%
+  mutate(Time = ceiling(Time/365)) %>%
+  filter(Time == burnin) %>%
+  dplyr::select(Predator, Cohort, POL) %>%
+  group_by(Predator, Cohort) %>%
+  summarise(POL = mean(POL)) %>%
+  filter(POL>0.05) %>%
+  dplyr::select(Predator, Cohort) %>%
+  distinct() %>%
+  mutate(isPred = 1)
+
+# for each run, get the proportion of POL consumed by each predator over time
+get_polprop <- function(this_run){
+  
+  print(this_run)
+  
+  # File paths
+  wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
+  dietfile <-  paste0("outputGOA0", this_run, "_testDietCheck.txt")
+  diet <- read.csv(paste(wd, dietfile, sep = "/"), sep = " ", header = T)
+  
+  diet1 <- diet %>%
+    mutate(Time = ceiling(Time/365)) %>%
+    left_join(POL_predators) %>%
+    filter(!is.na(isPred)) %>%
+    dplyr::select(Time, Predator, Cohort, POL) %>%
+    group_by(Time, Predator) %>% # take the mean across the multiple time steps within each year AND across age classes for a predator
+    summarise(POL = mean(POL)) 
+  
+  diet1 <- diet1 %>% mutate(run = this_run)
+  return(diet1)
+  
+}
+
+# do for all runs
+diets_pol_pred <- bind_rows(lapply(run, get_polprop))
+
+# join with run info - also need POL f info
+diet_key <- catch_df %>%
+  filter(!is.na(f), Code == "POL") %>%
+  mutate(Time = Time/365) %>%
+  select(Time,f,run,cap,wgts,env,other)
+
+diet_plot <- diets_pol_pred %>%
+  left_join(diet_key, by = c("Time","run")) %>%
+  filter(!is.na(cap)) %>% # this happens because the last record of f, which you filter for, is for year 99
+  filter(Time > 15)
+
+for(i in 1:length(unique(POL_predators$Predator))){
+  
+  current_code <- unique(POL_predators$Predator)[i]
+  current_name <- grps %>% filter(Code == current_code) %>% pull(Name)
+  
+  p8 <- diet_plot %>%
+    filter(Predator == current_code) %>%
+    ggplot(aes(x = Time, y = POL, color = f, shape = wgts))+
+    geom_point(aes(shape = factor(wgts)), size = 1)+
+    scale_shape_manual(values = c(1:length(unique(catch_df$wgts))))+
+    scale_color_viridis_c(option = "cividis")+
+    #scale_y_continuous(limits = c(0,NA))+
+    theme_bw()+
+    labs(x = "Year", 
+         y = "Proportion of pollock in diet", 
+         color = "F(pol)",
+         shape = "Weight scheme",
+         title = current_name)+
+    facet_grid(factor(env)~cap)
+  
+  ggsave(paste0(plotdir, "/diet/", current_code, "_hcr.png"), p8, 
+         width = 10, height = 4.5, 
+         units = "in", dpi = 300)
+  
+}
+
+# NB: at the moment there is a pervasive time series effect that is masking most of these plots
+# This is tied to the climate scenario to an extent, but it's also just POL declining over time in the base model
 
 
 # OLD CODE
