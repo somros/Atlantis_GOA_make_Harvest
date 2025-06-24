@@ -76,6 +76,16 @@ pref <- data.frame("Code" = oy_species) %>%
   mutate(pref = ifelse(Code %in% c("POL","COD","SBF","POP"),1,0))
 
 ##############################################################
+# fishery information
+
+estbo_files <- list.files("data/estBo/", full.names = T)
+estbo_list <- list()
+for(i in 1:length(estbo_files)){
+  estbo_list[[i]] <- read.csv(estbo_files[i])
+}
+estbo_key <- bind_rows(estbo_list) %>% select(Code, mean_biom) %>% rename(estbo = mean_biom)
+
+##############################################################
 # biology information
 # maturity at age
 bio_prm <- list.files(oy_dir)[grep("GOAbioparam_.*.prm", list.files(oy_dir))]
