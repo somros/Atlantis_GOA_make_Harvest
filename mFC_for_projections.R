@@ -111,9 +111,31 @@ dat_1990s %>%
   arrange(-prop)
 
 # there are some differences here and we should test this ASAP - may take some calibration
-# POL and COD can take it based on the HCR
+# POL and COD can take it based on the HCR? POL is fished at FMSY and barely goes below B40
 # worried that SBF will collapse and ATF will boom
 # neat that ATF will be even more inconsequential for BC caluculations
 
+# while we are at it and doing a run, let's do another with 2010s values
+dat_2010s <- dat_final %>%
+  filter(Year %in% c(2010:2019)) %>%
+  group_by(Code) %>%
+  summarise(F = mean(F, na.rm = T))
 
+# turn to mFC
+dat_2010s <- dat_2010s %>%
+  mutate(mFC = 1-exp(-`F`/365))
 
+# compare for groups that have new values
+dat_2010s %>%
+  filter(!is.nan(`F`)) %>%
+  left_join(prm_df) %>%
+  mutate(prop = mFC / mFC_prm) %>%
+  arrange(-prop)
+
+# would be very rough for Pcod
+
+# if stocks suffer too much from these you can always ease on mL and mQ (which would be a godsend)
+# halibut will be a key example
+# for stocks exploited more lightly we may have the opposite problem and have to introduce more mL or mQ
+
+# NB: these values have to be calibrated
