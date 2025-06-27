@@ -48,5 +48,25 @@ f_sbf <- f_sbf %>%
   pull(mean_f)
 
 # Pollock -----------------------------------------------------------------
+pol <- readRDS("data/pollock_assessment.RDS")
+pol_f <- pol$sd %>% filter(name=='F') %>% select(est,year)
+
+# how does this compare to Stock SMART?
+pol_f_ss <- f_ss %>% filter(grepl("Walleye pollock",`Stock Name`)) %>% select(Year,Value) %>% mutate(Year = as.numeric(Year), Value = as.numeric(Value))
+pol_f %>% 
+  left_join(pol_f_ss, by = c("year"="Year")) %>%
+  mutate(comp = est / Value) %>%
+  pull(comp) %>%
+  summary() # fairly close overall
+
+# How does this compare to the exloitation rates in the assessment?
+pol_f %>% filter(year >= 1977) %>% mutate(mu = 1 - exp(-est)) %>% pull(mu) # pretty poorly
+
+# TODO: figure out the difference between F and exploitation rate in the assessments
+# For now use F as it seems to be more consistent with the rest of the assessments
+pol_f %>%
+  filter(year > 1976) %>%
+  pull(est)
+
 
 
