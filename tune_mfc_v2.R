@@ -14,7 +14,7 @@ fished <- grps %>% filter(IsFished==1) %>% pull(Code)
 
 # Reference run with expected (target) mfc --------------------------------
 # reference PRM with the target mFC
-ref_run <- 2158
+ref_run <- 2179
 ref_wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", ref_run)
 ref_harvest_prm <- list.files(ref_wd)[grep("GOA_harvest_.*.prm", list.files(ref_wd))]
 ref_harvest <- readLines(paste(ref_wd, ref_harvest_prm, sep = "/"))
@@ -38,7 +38,7 @@ f_expected <- do.call(rbind, lapply(names(ref_mfc), function(x) {
 
 # Runt to tune ------------------------------------------------------------
 # what run are you tuning
-this_run <- 2160
+this_run <- 2179
 
 # prepare file paths
 wd <- paste0("C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/output_files/data/out_", this_run)
@@ -64,12 +64,10 @@ for(sp in fished) {
   harvest_params[[sp]] <- list(startage = startage, mfc = mfc)
 }
 
-# # turn mfc to f
-# f_expected <- do.call(rbind, lapply(names(harvest_params), function(x) {
-#   data.frame(Code = x, mfc = harvest_params[[x]]$mfc)
-# })) %>%
-#   mutate(f_e = -(365)*log(1-mfc)) %>%
-#   select(Code,f_e,mfc)
+# # store the mfc values from the run to tune
+mfc_to_tune <- do.call(rbind, lapply(names(harvest_params), function(x) {
+  data.frame(Code = x, mfc = harvest_params[[x]]$mfc)
+}))
 
 # Process biomass data
 biom <- biom %>% filter(Time==0) # biomass at t0
@@ -124,7 +122,7 @@ correction_factors[is.nan(correction_factors$prop),]$prop <- 1
 # SPI ends up being very high though...
 
 # bump up mfc values by prop
-new_mfc <- f_expected %>%
+new_mfc <- mfc_to_tune %>%
   left_join(correction_factors, by = "Code") %>%
   mutate(new_mfc = mfc * prop)
 
